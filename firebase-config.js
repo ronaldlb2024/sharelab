@@ -1,10 +1,12 @@
-// public/firebase-config.js
-window.FIREBASE_CONFIG = {
-  apiKey: "…",
-  authDomain: "…",
-  databaseURL: "https://SEU-PROJETO-default-rtdb.firebaseio.com",
-  projectId: "…",
-  storageBucket: "…",
-  messagingSenderId: "…",
-  appId: "…"
-};
+<script>
+  window.FIREBASE_CONFIG = {
+    apiKey: "REPLACE",
+    authDomain: "REPLACE.firebaseapp.com",
+    databaseURL: "https://REPLACE-default-rtdb.firebaseio.com",
+    projectId: "REPLACE",
+    storageBucket: "REPLACE.appspot.com",
+    messagingSenderId: "REPLACE",
+    appId: "REPLACE"
+  };
+</script>
+

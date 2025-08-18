@@ -1,6 +1,5 @@
-<!-- public/firebase-config.example.js -->
+<!-- Copie este arquivo para public/firebase-config.js e preencha suas credenciais -->
 <script>
-  // COPIE ESTE ARQUIVO para public/firebase-config.js e preencha seus dados:
   window.FIREBASE_CONFIG = {
     apiKey: "REPLACE",
     authDomain: "REPLACE.firebaseapp.com",

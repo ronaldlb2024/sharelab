@@ -1,5 +1,5 @@
-// public/js/lib/parse/report.js
-import { NORMALIZE_MAP } from '../lib/parse/normalizers.js';
+// js/lib/parse/report.js
+import { NORMALIZE_MAP } from './normalizers.js';
 
 const NUM = String.raw`[+-]?\d{1,3}(\.\d{3})*(,\d+)?|[+-]?\d+(\.\d+)?`;
 const SEP = String.raw`(?:-|–|a|até)`;
@@ -112,10 +112,11 @@ export function parseReportLoose(text){
     let found = null;
     for (const s of syns){
       const needle = norm(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-      const rx = new RegExp(needle + '[^\d]{0,40}(' + NUM_ANY.source + ')','i');
+      // >>> CORREÇÃO: usar \\d (duplo) dentro de string passada ao RegExp
+      const rx = new RegExp(needle + '[^\\d]{0,40}(' + NUM_ANY.source + ')','i');
       const idx = wholeN.search(rx);
       if (idx>=0){
-        const slice = whole.slice(max(0, idx-10), idx+200);
+        const slice = whole.slice(Math.max(0, idx-10), idx+200);
         const nm = slice.match(NUM_ANY);
         if (nm && !DATE.test(nm[0])) { found = nm[0]; break; }
       }

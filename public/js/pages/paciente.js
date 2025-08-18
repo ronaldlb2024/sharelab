@@ -1,86 +1,46 @@
-/*
- * Lógica da página do paciente.
- *
- * Esta página adiciona um ouvinte ao campo de upload de PDF e, quando um
- * arquivo é selecionado, utiliza a biblioteca PDF.js (carregada via CDN
- * em paciente.html) para ler o conteúdo textual do arquivo localmente. O
- * texto extraído é exibido em uma `<div>` na própria página e, em
- * seguida, é processado pelo parser para gerar as três saídas: linha
- * profissional, lista legível e JSON. Nenhuma informação é enviada
- * para servidores ou armazenada de forma persistente.
- */
-import { parseReport, formatLinhaProfissional, formatPacienteLista } from '../lib/parse/report.js';
+// public/js/pages/paciente.js
+import { parseReport, parseReportLoose, formatLinhaProfissional, formatListaPaciente } from '../lib/parse/report.js';
 
-// Seleciona os elementos da página.
-const fileInput = document.getElementById('pdfInput');
-const output = document.getElementById('output');
-const profissionalOutput = document.getElementById('profissionalOutput');
-const pacienteOutput = document.getElementById('pacienteOutput');
-const jsonOutput = document.getElementById('jsonOutput');
+const input = document.getElementById('pdfInput');
+const rawOut = document.getElementById('output');
+const proOut = document.getElementById('profissionalOutput');
+const pacOut = document.getElementById('pacienteOutput');
+const jsonOut = document.getElementById('jsonOutput');
 
-// Proteção: se o elemento não for encontrado (por exemplo, se o script for
-// carregado em outra página), simplesmente não registra o listener.
-if (fileInput && output) {
-    fileInput.addEventListener('change', async () => {
-        const file = fileInput.files?.[0];
-        if (!file) {
-            return;
-        }
-        // Atualiza a interface enquanto o PDF é processado.
-        output.textContent = 'Extraindo texto do PDF…';
-        const reader = new FileReader();
-        reader.onload = async () => {
-            const arrayBuffer = reader.result;
-            try {
-                // Configura o caminho do worker da biblioteca PDF.js. Este arquivo é
-                // carregado do CDN para evitar carregar scripts locais pesados.
-                window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-                    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js';
-                // Carrega o documento PDF a partir do ArrayBuffer.
-                const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-                let text = '';
-                // Itera sobre todas as páginas do PDF e concatena o texto.
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items
-                        .map((item) => item.str)
-                        .join(' ');
-                    text += pageText + '\n';
-                }
-                const extractedText = text.trim();
-                output.textContent = extractedText || 'Não foi possível extrair texto do PDF.';
-                // Tenta interpretar o laudo se houver texto extraído.
-                if (extractedText) {
-                    const parsed = parseReport(extractedText);
-                    // Linha profissional
-                    if (profissionalOutput) {
-                        profissionalOutput.textContent = formatLinhaProfissional(parsed.items);
-                    }
-                    // Lista legível
-                    if (pacienteOutput) {
-                        pacienteOutput.innerHTML = '';
-                        const linhas = formatPacienteLista(parsed.items);
-                        for (const linha of linhas) {
-                            const li = document.createElement('li');
-                            li.textContent = linha;
-                            pacienteOutput.appendChild(li);
-                        }
-                    }
-                    // JSON
-                    if (jsonOutput) {
-                        jsonOutput.textContent = JSON.stringify(parsed, null, 2);
-                    }
-                }
-            }
-            catch (err) {
-                console.error(err);
-                output.textContent = 'Erro ao ler o PDF.';
-            }
-        };
-        reader.onerror = () => {
-            output.textContent = 'Erro ao ler o arquivo.';
-        };
-        reader.readAsArrayBuffer(file);
+input?.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const array = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: array }).promise;
+    let text = '';
+    for (let i=1;i<=pdf.numPages;i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it => it.str).join('\n') + '\n';
+    }
+    rawOut.textContent = text.slice(0, 8000);
+
+    let base = parseReport(text);
+    if (!base.itens || base.itens.length < 3) {
+      const loose = parseReportLoose(text);
+      if (loose.itens.length > (base.itens?.length || 0)) base = loose;
+    }
+
+    const linha = formatLinhaProfissional(base.itens);
+    const lista = formatListaPaciente(base.itens);
+
+    proOut.textContent = linha || '—';
+    pacOut.innerHTML = '';
+    lista.forEach(li => {
+      const el = document.createElement('li');
+      el.textContent = li;
+      pacOut.appendChild(el);
     });
-}
+
+    const json = { paciente: base.paciente, exame: base.exame, itens: base.itens };
+    jsonOut.textContent = JSON.stringify(json, null, 2);
+  } catch (err) {
+    rawOut.textContent = 'Erro ao ler PDF: ' + (err && err.message ? err.message : String(err));
+  }
+});

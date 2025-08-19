@@ -5,56 +5,46 @@
   <title>Sharelab — Médico</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{font-family:system-ui,sans-serif;margin:16px;max-width:600px}
-    h1,h2{margin-bottom:.5rem}
-    pre,code{background:#f8f8f8;border:1px solid #ddd;border-radius:6px}
-    pre{padding:.5rem;white-space:pre-wrap}
-    ul{background:#f8f8f8;border:1px solid #ddd;border-radius:6px;padding:.5rem;list-style:disc inside;margin:0}
-    .row{display:flex;gap:.5rem;align-items:center}
-    button{padding:.4rem .6rem;border:1px solid #777;border-radius:6px;background:#fff;cursor:pointer}
-    button:active{transform:translateY(1px)}
+    body{font-family:system-ui,sans-serif;margin:16px;max-width:700px}
+    h1,h2{margin:.25rem 0}
+    pre{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;white-space:pre-wrap}
+    ul{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;list-style:disc inside;margin:0}
+    .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+    button,input{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
   </style>
 </head>
 <body>
-  <h1>Receber dados do paciente</h1>
+  <h1>Receber resultados</h1>
 
   <!-- Conexão -->
-  <div class="row" style="margin-bottom:1rem">
-    <input id="sessionCodeInput" maxlength="6" placeholder="Código do paciente" style="width:8em;padding:.4rem .6rem;border:1px solid #777;border-radius:6px">
+  <div class="row" style="margin:8px 0 12px">
+    <input id="sessionCodeInput" maxlength="6" placeholder="Código (ex.: 428197)" style="width:10em">
     <button id="connectBtn">Conectar</button>
+    <span id="p2pStatus" style="font-size:.9em;color:#555"></span>
   </div>
-  <p id="p2pStatus" style="font-size:.9em;color:#555;margin-top:-.5rem"></p>
 
-  <!-- Exibição de saídas -->
-  <div class="row" style="margin-bottom:.5rem">
-    <h2 style="flex:1">Profissional (linha corrida)</h2>
-    <button id="btnCopyProf" style="font-size:.9em">Copiar</button>
+  <!-- RESULTADOS (apenas o que importa) -->
+  <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px">
+    <h2 style="margin:.5rem 0">Linha clínica</h2>
+    <button id="btnCopyProf" title="Copiar para prontuário">Copiar</button>
   </div>
   <pre id="profissional">—</pre>
 
-  <h2 style="margin-top:1rem">Paciente (lista)</h2>
+  <h2 style="margin-top:1rem">Lista legível</h2>
   <ul id="legivel"></ul>
 
-  <details style="margin-top:.5rem">
-    <summary style="cursor:pointer;font-weight:bold">Ver JSON (opcional)</summary>
-    <pre id="json"></pre>
-  </details>
-
-  <!-- Scripts -->
+  <!-- Scripts essenciais -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=2"></script>
-  <script type="module" src="js/pages/medico.js"></script>
+  <script src="firebase-config.js?v=3"></script>
+  <script type="module" src="js/pages/medico.js?v=3"></script>
 
-  <!-- Botão de copiar (pode ficar inline para simplicidade) -->
+  <!-- Copiar (inline, leve) -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const btnCopy = document.getElementById('btnCopyProf');
-      btnCopy?.addEventListener('click', () => {
-        const text = document.getElementById('profissional')?.textContent || '';
-        navigator.clipboard.writeText(text).then(() => {
-          alert('Linha profissional copiada.');
-        });
+      document.getElementById('btnCopyProf')?.addEventListener('click', () => {
+        const txt = document.getElementById('profissional')?.textContent || '';
+        navigator.clipboard.writeText(txt).then(()=>alert('Linha clínica copiada.'));
       });
     });
   </script>

@@ -1,47 +1,62 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8">
   <title>Sharelab — Médico</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, sans-serif; margin: 16px; }
-    pre { background:#fff; border:1px solid #ccc; border-radius:6px; padding:.5rem; white-space: pre-wrap; }
-    .card { background:#f9f9f9; border:1px solid #ddd; border-radius:12px; padding:12px; margin:12px 0; }
-    .row { display:flex; gap:.5rem; align-items:center; flex-wrap: wrap; }
-    .btn { padding:.5rem .75rem; border:1px solid #888; border-radius:8px; background:#fff; cursor:pointer; }
-    input { padding:.4rem .5rem; border:1px solid #888; border-radius:8px; width:8em; }
+    body{font-family:system-ui,sans-serif;margin:16px;max-width:600px}
+    h1,h2{margin-bottom:.5rem}
+    pre,code{background:#f8f8f8;border:1px solid #ddd;border-radius:6px}
+    pre{padding:.5rem;white-space:pre-wrap}
+    ul{background:#f8f8f8;border:1px solid #ddd;border-radius:6px;padding:.5rem;list-style:disc inside;margin:0}
+    .row{display:flex;gap:.5rem;align-items:center}
+    button{padding:.4rem .6rem;border:1px solid #777;border-radius:6px;background:#fff;cursor:pointer}
+    button:active{transform:translateY(1px)}
   </style>
 </head>
 <body>
-  <h1>Médico</h1>
+  <h1>Receber dados do paciente</h1>
 
-  <div class="card">
-    <h2>Conectar paciente</h2>
-    <div class="row">
-      <input id="sessionCodeInput" maxlength="6" placeholder="428197" />
-      <button id="connectBtn" class="btn">Conectar</button>
-    </div>
-    <p id="p2pStatus" style="font-size:.9rem;color:#555;margin:.25rem 0 0">
-      Digite o código fornecido pelo paciente para receber os dados (P2P).
-    </p>
+  <!-- Conexão -->
+  <div class="row" style="margin-bottom:1rem">
+    <input id="sessionCodeInput" maxlength="6" placeholder="Código do paciente" style="width:8em;padding:.4rem .6rem;border:1px solid #777;border-radius:6px">
+    <button id="connectBtn">Conectar</button>
   </div>
+  <p id="p2pStatus" style="font-size:.9em;color:#555;margin-top:-.5rem"></p>
 
-  <div class="card">
-    <h2>Profissional</h2>
-    <pre id="profissional">—</pre>
-    <h2>Paciente</h2>
-    <ul id="legivel" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:.5rem;list-style:disc inside;margin:0"></ul>
-    <h2>JSON</h2>
-    <pre id="json">—</pre>
+  <!-- Exibição de saídas -->
+  <div class="row" style="margin-bottom:.5rem">
+    <h2 style="flex:1">Profissional (linha corrida)</h2>
+    <button id="btnCopyProf" style="font-size:.9em">Copiar</button>
   </div>
+  <pre id="profissional">—</pre>
 
-  <!-- Firebase compat -->
+  <h2 style="margin-top:1rem">Paciente (lista)</h2>
+  <ul id="legivel"></ul>
+
+  <details style="margin-top:.5rem">
+    <summary style="cursor:pointer;font-weight:bold">Ver JSON (opcional)</summary>
+    <pre id="json"></pre>
+  </details>
+
+  <!-- Scripts -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <!-- Sua config -->
-  <script src="firebase-config.js"></script>
-  <!-- Lógica -->
+  <script src="firebase-config.js?v=2"></script>
   <script type="module" src="js/pages/medico.js"></script>
+
+  <!-- Botão de copiar (pode ficar inline para simplicidade) -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btnCopy = document.getElementById('btnCopyProf');
+      btnCopy?.addEventListener('click', () => {
+        const text = document.getElementById('profissional')?.textContent || '';
+        navigator.clipboard.writeText(text).then(() => {
+          alert('Linha profissional copiada.');
+        });
+      });
+    });
+  </script>
 </body>
 </html>

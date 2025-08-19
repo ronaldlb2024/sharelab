@@ -8,7 +8,6 @@
     body{font-family:system-ui,sans-serif;margin:16px;max-width:720px}
     h1,h2{margin:.25rem 0}
     pre{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;white-space:pre-wrap}
-    ul{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;list-style:disc inside;margin:0}
     .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
     button,input{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
     p.muted{font-size:.9em;color:#555}
@@ -17,30 +16,24 @@
 <body>
   <h1>Receber resultados</h1>
 
-  <!-- Conexão -->
-  <div class="row" style="margin:6px 0 10px">
+  <div class="row">
     <input id="sessionCodeInput" maxlength="6" placeholder="Código (ex.: 428197)" style="width:10em">
     <button id="connectBtn">Conectar</button>
     <span id="p2pStatus" class="muted"></span>
   </div>
 
-  <!-- RESULTADOS -->
-  <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px">
-    <h2 style="margin:.5rem 0">Linha clínica</h2>
-    <button id="btnCopyProf" title="Copiar para prontuário">Copiar</button>
+  <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
+    <h2>Linha clínica</h2>
+    <button id="btnCopyProf">Copiar</button>
   </div>
   <pre id="profissional">—</pre>
 
-  <h2 style="margin-top:1rem">Lista legível</h2>
-  <ul id="legivel"></ul>
-
-  <!-- Scripts essenciais -->
+  <!-- libs -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=4"></script>
-  <script type="module" src="js/pages/medico.js?v=4"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="js/pages/medico.js"></script>
 
-  <!-- Copiar (inline, leve) -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('btnCopyProf')?.addEventListener('click', () => {

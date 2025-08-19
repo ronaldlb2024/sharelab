@@ -5,13 +5,15 @@
   <title>Sharelab — Paciente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{font-family:system-ui,sans-serif;margin:16px;max-width:600px}
+    body{font-family:system-ui,sans-serif;margin:16px;max-width:620px}
     h1,h2{margin:.25rem 0}
     pre{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;white-space:pre-wrap}
     ul{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;list-style:disc inside;margin:0}
     .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
     .card{margin:12px 0}
     button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
+    code.badge{font-size:1.15rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
+    p.muted{font-size:.9em;color:#555}
   </style>
 </head>
 <body>
@@ -20,7 +22,7 @@
   <!-- Upload -->
   <div class="card">
     <input id="pdfInput" type="file" accept="application/pdf">
-    <p style="font-size:.9em;color:#555">Processamento local. Nada é enviado a servidores.</p>
+    <p class="muted">Processamento local. Nada é enviado a servidores.</p>
   </div>
 
   <!-- RESULTADOS (apenas o que importa) -->
@@ -32,23 +34,23 @@
     <ul id="pacienteOutput"></ul>
   </div>
 
-  <!-- P2P (simples) -->
+  <!-- P2P -->
   <div class="card">
     <h2>Compartilhar com o médico</h2>
     <div class="row">
       <strong>Código:</strong>
-      <code id="sessionCodeDisplay" style="font-size:1.15rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px">— — — — — —</code>
+      <code id="sessionCodeDisplay" class="badge">— — — — — —</code>
       <button id="generateCodeBtn">Novo código</button>
       <button id="connectBtn">Conectar &amp; Enviar</button>
     </div>
-    <p id="p2pStatus" style="font-size:.9em;color:#555;margin:.25rem 0 0"></p>
+    <p id="p2pStatus" class="muted"></p>
   </div>
 
   <!-- Scripts essenciais -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=3"></script>
-  <script type="module" src="js/pages/paciente.js?v=3"></script>
+  <script src="firebase-config.js?v=4"></script>
+  <script type="module" src="js/pages/paciente.js?v=4"></script>
 </body>
 </html>

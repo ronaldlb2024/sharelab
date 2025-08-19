@@ -1,10 +1,12 @@
 // public/firebase-config.js
 window.FIREBASE_CONFIG = {
-  apiKey: "SUA_API_KEY",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyBq_uaIhb_llYftpN2XAl8BbUc0FumappA",
+  authDomain: "starry-compiler-468018-h0.firebaseapp.com",
+  databaseURL: "https://starry-compiler-468018-h0-default-rtdb.firebaseio.com", 
+  projectId: "starry-compiler-468018-h0",
+  storageBucket: "starry-compiler-468018-h0.firebasestorage.app",
+  messagingSenderId: "131157354396",
+  appId: "1:131157354396:web:478e0afc8cae4643a70a59",
+  measurementId: "G-FZ0N1NCYLZ"
 };
+

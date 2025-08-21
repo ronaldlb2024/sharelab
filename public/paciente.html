@@ -11,6 +11,7 @@
     button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
     code.badge{font-size:1.2rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
     p.muted{font-size:.9em;color:#555}
+    textarea{width:100%;height:180px;margin-top:1rem;font-family:monospace}
   </style>
 </head>
 <body>
@@ -18,6 +19,9 @@
 
   <input id="pdfInput" type="file" accept="application/pdf">
   <p class="muted">O PDF é processado apenas no seu dispositivo. Nada é enviado a servidores.</p>
+
+  <h2>Pré-visualização do extrator</h2>
+  <textarea id="extractPreview" readonly placeholder="O resultado do exame aparecerá aqui..."></textarea>
 
   <h2>Compartilhar com o médico</h2>
   <div class="row">
@@ -33,6 +37,35 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script src="firebase-config.js"></script>
+
+  <!-- extrator multi-lab -->
+  <script type="module">
+    import { extractExams } from "./js/utils/extractor.js";
+
+    const input = document.getElementById("pdfInput");
+    const preview = document.getElementById("extractPreview");
+
+    input.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = "";
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const text = await page.getTextContent();
+        fullText += text.items.map(t => t.str).join(" ") + "\n";
+      }
+
+      // aplica extrator normalizado (DASA, A+, Rededor)
+      const result = extractExams(fullText);
+      preview.value = result.profissional || "Não consegui extrair os exames.";
+    });
+  </script>
+
+  <!-- envio/share -->
   <script type="module" src="js/pages/paciente.js"></script>
 </body>
 </html>

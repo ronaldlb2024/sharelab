@@ -32,23 +32,24 @@
   </div>
   <p id="p2pStatus" class="muted"></p>
 
-  <!-- PDF.js (biblioteca + worker corretamente configurado) -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
+  <!-- PDF.js local (evita 404/CDN) -->
+  <script src="./vendor/pdf.min.js" onerror="console.error('Falha ao carregar vendor/pdf.min.js')"></script>
   <script>
-    // IMPORTANTE: sem o worker, o getDocument pode travar silenciosamente
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js";
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
+    } else {
+      console.error("[PDF] pdfjsLib não está disponível. Verifique vendor/pdf.min.js");
+    }
   </script>
 
-  <!-- Firebase (como você já tinha) -->
+  <!-- Firebase (ajuste o caminho se precisar) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js"></script>
+  <script src="./firebase-config.js" onerror="console.error('Falha ao carregar firebase-config.js')"></script>
 
-  <!-- Extrator multi-lab (seu módulo) -->
+  <!-- Extrator + leitura do PDF -->
   <script type="module">
-    import { extractExams } from "./js/utils/extractor.js";
-
+    import { extractExams } from "./js/utils/extractor.js"; // caminho RELATIVO
     const input = document.getElementById("pdfInput");
     const preview = document.getElementById("extractPreview");
 
@@ -56,47 +57,35 @@
       const file = e.target.files?.[0];
       if (!file) return;
       preview.value = "Lendo PDF…";
-
       try {
+        if (!window.pdfjsLib) {
+          preview.value = "Falha ao carregar PDF.js (vendor).";
+          return;
+        }
         const buf = await file.arrayBuffer();
-        const t0 = performance.now();
         const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-
         let fullText = "";
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const tc = await page.getTextContent();
-          // Junta os “str” com espaço para minimizar quebra estranha de tokens
-          const pageText = tc.items.map(it => it.str).join(" ");
-          fullText += pageText + "\n";
+          fullText += tc.items.map(it => it.str).join(" ") + "\n";
         }
-        const t1 = performance.now();
-
-        console.log("[PDF] Páginas:", pdf.numPages, "ms:", Math.round(t1 - t0));
-        // Heurística simples para detectar PDF “só imagem”
         const textLen = (fullText || "").trim().length;
-        console.log("[PDF] Tamanho do texto extraído:", textLen);
-
         if (textLen < 40) {
-          preview.value = "Este PDF parece não ter texto (provável PDF escaneado)."
-            + "\nTente enviar a versão nativa do laudo (não digitalizada).";
+          preview.value = "Este PDF parece não ter texto (provável PDF escaneado).\nEnvie a versão nativa do laudo.";
           return;
         }
-
-        // Aplica o extrator normalizado (DASA, A+, Rededor)
         const result = extractExams(fullText);
-
-        // Mostra o formato profissional (linha corrida). Pode expandir para paciente/JSON.
         preview.value = result?.profissional || "Não consegui extrair os exames.";
-        console.log("[Extrator] Debug:", result);
+        console.log("[Extrator] Resultado:", result);
       } catch (err) {
-        console.error("[PDF] Erro ao ler:", err);
+        console.error(err);
         preview.value = "Erro ao ler o PDF. Verifique o arquivo e tente novamente.";
       }
     });
   </script>
 
-  <!-- P2P/envio (seu módulo atual) -->
-  <script type="module" src="js/pages/paciente.js"></script>
+  <!-- P2P/envio (mantenha relativo) -->
+  <script type="module" src="./js/pages/paciente.js" onerror="console.error('Falha ao carregar js/pages/paciente.js')"></script>
 </body>
 </html>

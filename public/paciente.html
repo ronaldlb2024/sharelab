@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>Sharelab — Paciente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
@@ -11,13 +11,13 @@
     button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
     code.badge{font-size:1.2rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
     p.muted{font-size:.9em;color:#555}
-    textarea{width:100%;height:180px;margin-top:1rem;font-family:monospace}
+    textarea{width:100%;height:180px;margin-top:1rem;font-family:ui-monospace,monospace}
   </style>
 </head>
 <body>
   <h1>Enviar exame</h1>
 
-  <input id="pdfInput" type="file" accept="application/pdf">
+  <input id="pdfInput" type="file" accept="application/pdf" />
   <p class="muted">O PDF é processado apenas no seu dispositivo. Nada é enviado a servidores.</p>
 
   <h2>Pré-visualização do extrator</h2>
@@ -32,13 +32,20 @@
   </div>
   <p id="p2pStatus" class="muted"></p>
 
-  <!-- libs -->
+  <!-- PDF.js (biblioteca + worker corretamente configurado) -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
+  <script>
+    // IMPORTANTE: sem o worker, o getDocument pode travar silenciosamente
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js";
+  </script>
+
+  <!-- Firebase (como você já tinha) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script src="firebase-config.js"></script>
 
-  <!-- extrator multi-lab -->
+  <!-- Extrator multi-lab (seu módulo) -->
   <script type="module">
     import { extractExams } from "./js/utils/extractor.js";
 
@@ -46,26 +53,50 @@
     const preview = document.getElementById("extractPreview");
 
     input.addEventListener("change", async (e) => {
-      const file = e.target.files[0];
+      const file = e.target.files?.[0];
       if (!file) return;
+      preview.value = "Lendo PDF…";
 
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let fullText = "";
+      try {
+        const buf = await file.arrayBuffer();
+        const t0 = performance.now();
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
 
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const text = await page.getTextContent();
-        fullText += text.items.map(t => t.str).join(" ") + "\n";
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const tc = await page.getTextContent();
+          // Junta os “str” com espaço para minimizar quebra estranha de tokens
+          const pageText = tc.items.map(it => it.str).join(" ");
+          fullText += pageText + "\n";
+        }
+        const t1 = performance.now();
+
+        console.log("[PDF] Páginas:", pdf.numPages, "ms:", Math.round(t1 - t0));
+        // Heurística simples para detectar PDF “só imagem”
+        const textLen = (fullText || "").trim().length;
+        console.log("[PDF] Tamanho do texto extraído:", textLen);
+
+        if (textLen < 40) {
+          preview.value = "Este PDF parece não ter texto (provável PDF escaneado)."
+            + "\nTente enviar a versão nativa do laudo (não digitalizada).";
+          return;
+        }
+
+        // Aplica o extrator normalizado (DASA, A+, Rededor)
+        const result = extractExams(fullText);
+
+        // Mostra o formato profissional (linha corrida). Pode expandir para paciente/JSON.
+        preview.value = result?.profissional || "Não consegui extrair os exames.";
+        console.log("[Extrator] Debug:", result);
+      } catch (err) {
+        console.error("[PDF] Erro ao ler:", err);
+        preview.value = "Erro ao ler o PDF. Verifique o arquivo e tente novamente.";
       }
-
-      // aplica extrator normalizado (DASA, A+, Rededor)
-      const result = extractExams(fullText);
-      preview.value = result.profissional || "Não consegui extrair os exames.";
     });
   </script>
 
-  <!-- envio/share -->
+  <!-- P2P/envio (seu módulo atual) -->
   <script type="module" src="js/pages/paciente.js"></script>
 </body>
 </html>

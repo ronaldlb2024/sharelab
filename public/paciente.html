@@ -2,54 +2,65 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Sharelab — Paciente</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
   <style>
-    /* Estilo leve e responsivo */
-    :root { color-scheme: light dark; }
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-         margin:16px;max-width:640px;line-height:1.35}
-    h1,h2{margin:.25rem 0}
-    .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
-    button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff;cursor:pointer}
-    button:active{transform:translateY(1px)}
-    code.badge{font-size:1.15rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
-    p.muted{font-size:.9em;color:#666;margin:.25rem 0 0}
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    pre, code { background:#fff; border:1px solid #ccc; border-radius:6px; }
+    pre { padding:.5rem; white-space: pre-wrap; }
+    .card { background:#f9f9f9; border:1px solid #ddd; border-radius:12px; padding:12px; margin:12px 0; }
+    .row { display:flex; gap:.5rem; align-items:center; flex-wrap: wrap; }
+    .btn { padding:.5rem .75rem; border:1px solid #888; border-radius:8px; background:#fff; cursor:pointer; }
+    .btn:active { transform: translateY(1px); }
+    input[type="file"] { padding:.25rem; }
   </style>
-
-  <!-- PDF.js via CDN (essencial para ler o PDF no navegador) -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
-  <script>
-    // Configura o worker do PDF.js
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js";
-  </script>
 </head>
 <body>
-  <h1>Enviar exame</h1>
+  <h1>Paciente</h1>
 
-  <!-- Upload do PDF (processamento local) -->
-  <input id="pdfInput" type="file" accept="application/pdf" />
-  <p class="muted">O PDF é processado apenas no seu dispositivo. Nada é enviado a servidores.</p>
-
-  <!-- P2P para compartilhar com o médico -->
-  <h2 style="margin-top:16px">Compartilhar com o médico</h2>
-  <div class="row">
-    <strong>Código:</strong>
-    <code id="sessionCodeDisplay" class="badge">— — — — — —</code>
-    <button id="generateCodeBtn" type="button">Novo código</button>
-    <button id="connectBtn" type="button">Conectar &amp; Enviar</button>
+  <div class="card">
+    <h2>Upload de PDF</h2>
+    <input id="pdfInput" type="file" accept="application/pdf" />
+    <p style="font-size:.9rem;color:#555;margin:.5rem 0 0">
+      O processamento é <strong>local</strong> no navegador. Nenhum dado clínico é enviado a servidores.
+    </p>
   </div>
-  <p id="p2pStatus" class="muted"></p>
 
-  <!-- Firebase compat + sua configuração -->
+  <div class="card">
+    <h2>Texto bruto extraído</h2>
+    <pre id="output">—</pre>
+  </div>
+
+  <div class="card">
+    <h2>Saída profissional (linha corrida)</h2>
+    <pre id="profissionalOutput">—</pre>
+    <h2>Saída legível (paciente)</h2>
+    <ul id="pacienteOutput" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:.5rem;list-style:disc inside;margin:0"></ul>
+    <h2>JSON</h2>
+    <pre id="jsonOutput">—</pre>
+  </div>
+
+  <div class="card">
+    <h2>Compartilhar com o médico (P2P)</h2>
+    <div class="row" style="margin:.5rem 0">
+      <span>Código da sessão:</span>
+      <code id="sessionCodeDisplay" style="font-size:1.2rem; padding:.2rem .5rem">— — — — — —</code>
+      <button id="generateCodeBtn" class="btn">Gerar novo</button>
+      <button id="connectBtn" class="btn">Conectar & Enviar</button>
+    </div>
+    <p id="p2pStatus" style="font-size:.9rem;color:#555;margin:.25rem 0 0">
+      Sinalização via Firebase (offer/answer/ICE). Dados clínicos <strong>somente</strong> via WebRTC P2P.
+    </p>
+  </div>
+
+  <!-- PDF.js -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
+  <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <!-- ATENÇÃO: este arquivo deve existir em /public com suas chaves do projeto -->
-  <script src="firebase-config.js?v=7"></script>
-
-  <!-- Lógica da página (usa os IDs acima e envia só a linha clínica) -->
-  <script type="module" src="js/pages/paciente.js?v=7"></script>
+  <!-- Sua config (crie firebase-config.js a partir do example) -->
+  <script src="firebase-config.js"></script>
+  <!-- Lógica -->
+  <script type="module" src="js/pages/paciente.js"></script>
 </body>
 </html>

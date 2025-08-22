@@ -1,91 +1,109 @@
-// js/pages/paciente.js
+// public/js/pages/paciente.js
+import { parseReport, parseReportLoose, formatLinhaProfissional } from '../lib/parse/report.js';
 
-// ---------- UI refs ----------
-const pdfInput = document.getElementById('pdfInput');
-const pdfStatus = document.getElementById('pdfStatus');
-const pdfPreview = document.getElementById('pdfPreview');
+window.addEventListener('DOMContentLoaded', () => {
+  // Elementos
+  const input   = document.getElementById('pdfInput');
+  const codeEl  = document.getElementById('sessionCodeDisplay');
+  const genBtn  = document.getElementById('generateCodeBtn');
+  const connBtn = document.getElementById('connectBtn');
+  const statusEl= document.getElementById('p2pStatus');
 
-// (Se já tiver estes botões/fluxo de sessão P2P, mantenha-os)
-const codeEl = document.getElementById('sessionCodeDisplay');
-const btnCode = document.getElementById('generateCodeBtn');
-const btnConnect = document.getElementById('connectBtn');
-const p2pStatus = document.getElementById('p2pStatus');
+  // Estado
+  let linhaClinica = '';   // único campo a enviar
+  let currentCode  = null;
+  let pc           = null;
 
-// ---------- Utils ----------
-function setStatus(msg, ok = true) {
-  pdfStatus.textContent = msg || '';
-  pdfStatus.className = ok ? 'muted ok' : 'muted err';
-}
+  // Helpers UI
+  const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
+  const genCode   = () => String(Math.floor(100000 + Math.random()*900000));
+  const showCode  = (code) => {
+    currentCode = code;
+    if (codeEl) codeEl.textContent = code.replace(/(...)(...)/, '$1 $2');
+  };
 
-// Extrai o texto de uma página do PDF
-async function extractPageText(pdf, pageNum) {
-  const page = await pdf.getPage(pageNum);
-  const content = await page.getTextContent();
-  // Junta os "items" na ordem
-  return content.items.map(it => it.str).join(' ');
-}
-
-// Lê o arquivo selecionado e retorna ArrayBuffer
-function fileToArrayBuffer(file) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(fr.result);
-    fr.onerror = () => reject(fr.error);
-    fr.readAsArrayBuffer(file);
-  });
-}
-
-// ---------- Carregamento do PDF do input ----------
-pdfInput?.addEventListener('change', async () => {
-  try {
-    if (!pdfInput.files || !pdfInput.files[0]) {
-      setStatus('Nenhum arquivo selecionado.', false);
-      return;
-    }
-    const file = pdfInput.files[0];
-    if (!/\.pdf$/i.test(file.name)) {
-      setStatus('Selecione um arquivo PDF válido.', false);
-      return;
-    }
-
-    setStatus('Lendo arquivo PDF…');
-    const ab = await fileToArrayBuffer(file);
-
-    // IMPORTANTE: use {data: ab} para evitar CORS
-    const loadingTask = pdfjsLib.getDocument({ data: ab });
-    const pdf = await loadingTask.promise;
-
-    setStatus(`PDF carregado: ${pdf.numPages} página(s). Extraindo texto…`);
-    let fullText = '';
-    for (let p = 1; p <= pdf.numPages; p++) {
-      const pageText = await extractPageText(pdf, p);
-      fullText += (p > 1 ? '\n\n' : '') + pageText;
-    }
-
-    // Mostra prévia e mantém em memória para o próximo passo (extrator/normalizador)
-    pdfPreview.value = fullText || '(Sem texto extraível — se o PDF for imagem digitalizada, será preciso OCR)';
-
-    setStatus('Texto extraído com sucesso.');
-  } catch (err) {
-    console.error(err);
-    setStatus('Falha ao carregar/extrair o PDF. Verifique o arquivo e tente novamente.', false);
+  // Firebase
+  function initFirebase(){
+    if (!window.FIREBASE_CONFIG) { setStatus('firebase-config.js ausente'); throw new Error('FIREBASE_CONFIG missing'); }
+    if (!window.firebase?.apps?.length) window.firebase.initializeApp(window.FIREBASE_CONFIG);
+    return window.firebase.database();
   }
-});
 
-// ---------- (Opcional) Integração com seu extrator/normalizador ----------
-// Aqui você pode chamar a sua função de normalização extraindo do pdfPreview.value.
-// Ex.: const linhaProfissional = normalizarExame(pdfPreview.value);
+  // WebRTC (envio)
+  async function connectAndSend(){
+    if (!currentCode){ setStatus('Gere o código antes de conectar.'); return; }
+    if (!linhaClinica){ setStatus('Selecione um PDF primeiro.'); return; }
 
-// ---------- (Opcional) Geração de código de sessão e envio P2P ----------
-// Mantenha seu fluxo Firebase/WebRTC existente; a seguir só placeholders:
+    const db = initFirebase();
+    pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
+    const dc = pc.createDataChannel('data');
 
-btnCode?.addEventListener('click', () => {
-  // gere/exiba seu código de sessão (placeholder)
-  codeEl.textContent = String(Math.floor(100000 + Math.random()*900000));
-});
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) db.ref(`webrtc/${currentCode}/ice/paciente`).push(JSON.stringify(ev.candidate));
+    };
+    db.ref(`webrtc/${currentCode}/ice/medico`).on('child_added', (snap) => {
+      try { pc.addIceCandidate(new RTCIceCandidate(JSON.parse(snap.val()))).catch(console.error); }
+      catch(e){ console.error(e); }
+    });
 
-btnConnect?.addEventListener('click', async () => {
-  // aqui você conecta via WebRTC ou envia via mecanismo escolhido
-  // enviando, por exemplo, pdfPreview.value já normalizado
-  p2pStatus.textContent = 'Conectando… (implemente sua lógica P2P aqui)';
+    dc.onopen = async () => {
+      try {
+        dc.send(JSON.stringify({ profissional: linhaClinica }));
+        setStatus('Enviado ao médico via P2P.');
+        // opcional: limpar sinalização depois
+        setTimeout(()=> db.ref(`webrtc/${currentCode}`).remove().catch(()=>{}), 3000);
+      } catch(e){
+        console.error(e); setStatus('Falha ao enviar.');
+      }
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await db.ref(`webrtc/${currentCode}/offer`).set(JSON.stringify(offer));
+    setStatus('Offer publicada. Aguardando médico…');
+
+    db.ref(`webrtc/${currentCode}/answer`).on('value', async (snap) => {
+      const v = snap.val(); if (!v) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(v)));
+      setStatus('Conectado. Enviando…');
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected') db.ref(`webrtc/${currentCode}`).off();
+      };
+    });
+  }
+
+  // Eventos de UI P2P
+  genBtn?.addEventListener('click', () => { showCode(genCode()); setStatus('Código gerado. Passe ao médico.'); });
+  if (!currentCode) showCode(genCode());
+  connBtn?.addEventListener('click', () => { connectAndSend().catch(e=>{console.error(e);setStatus('Erro ao conectar.');}); });
+
+  // Extração (gera só a linha clínica)
+  input?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      // (PDF.js já está configurado no HTML)
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let text = '';
+      for (let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(it => it.str).join('\n') + '\n';
+      }
+
+      // Parser (estrito → se fraco, usa loose)
+      let base = parseReport(text);
+      if (!base.itens || base.itens.length < 3) {
+        const loose = parseReportLoose(text);
+        if (loose.itens.length > (base.itens?.length || 0)) base = loose;
+      }
+
+      linhaClinica = formatLinhaProfissional(base.itens) || '';
+      setStatus(linhaClinica ? 'Pronto para enviar.' : 'Não foi possível montar linha clínica.');
+    } catch (err) {
+      console.error(err);
+      setStatus('Erro ao ler PDF.');
+    }
+  });
 });

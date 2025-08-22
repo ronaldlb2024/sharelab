@@ -1,54 +1,54 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>Sharelab — Paciente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{font-family:system-ui,sans-serif;margin:16px;max-width:720px}
+    body{font-family:system-ui,sans-serif;margin:16px;max-width:600px}
     h1,h2{margin:.25rem 0}
+    pre{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;white-space:pre-wrap}
+    ul{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;list-style:disc inside;margin:0}
     .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+    .card{margin:12px 0}
     button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
-    code.badge{font-size:1.1rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
-    p.muted{font-size:.9em;color:#555}
-    textarea{width:100%;min-height:120px;border:1px solid #bbb;border-radius:8px;padding:.6rem}
-    .ok{color:#0a7d36}
-    .err{color:#b00020}
   </style>
 </head>
 <body>
   <h1>Enviar exame</h1>
 
-  <input id="pdfInput" type="file" accept="application/pdf" />
-  <p class="muted">O PDF é processado apenas no seu dispositivo. Nada é enviado a servidores.</p>
-  <p id="pdfStatus" class="muted"></p>
-
-  <h2>Prévia do texto extraído</h2>
-  <textarea id="pdfPreview" placeholder="O texto do PDF aparecerá aqui após o carregamento..."></textarea>
-
-  <h2>Compartilhar com o médico</h2>
-  <div class="row">
-    <strong>Código:</strong>
-    <code id="sessionCodeDisplay" class="badge">— — —</code>
-    <button id="generateCodeBtn">Novo código</button>
-    <button id="connectBtn">Conectar &amp; Enviar</button>
+  <!-- Upload -->
+  <div class="card">
+    <input id="pdfInput" type="file" accept="application/pdf">
+    <p style="font-size:.9em;color:#555">Processamento local. Nada é enviado a servidores.</p>
   </div>
-  <p id="p2pStatus" class="muted"></p>
 
-  <!-- libs: PDF.js deve vir antes do seu JS que usa pdfjsLib -->
+  <!-- RESULTADOS (apenas o que importa) -->
+  <div class="card">
+    <h2>Para o médico (linha clínica)</h2>
+    <pre id="profissionalOutput">—</pre>
+
+    <h2>Para você (lista legível)</h2>
+    <ul id="pacienteOutput"></ul>
+  </div>
+
+  <!-- P2P (simples) -->
+  <div class="card">
+    <h2>Compartilhar com o médico</h2>
+    <div class="row">
+      <strong>Código:</strong>
+      <code id="sessionCodeDisplay" style="font-size:1.15rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px">— — — — — —</code>
+      <button id="generateCodeBtn">Novo código</button>
+      <button id="connectBtn">Conectar &amp; Enviar</button>
+    </div>
+    <p id="p2pStatus" style="font-size:.9em;color:#555;margin:.25rem 0 0"></p>
+  </div>
+
+  <!-- Scripts essenciais -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
-  <script>
-    // MUITO IMPORTANTE: a versão do worker deve casar com a versão acima
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js";
-  </script>
-
-  <!-- Firebase (se já estiver usando p/ sinalização P2P) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js"></script>
-
-  <!-- Seu módulo da página do paciente -->
-  <script type="module" src="js/pages/paciente.js"></script>
+  <script src="firebase-config.js?v=3"></script>
+  <script type="module" src="js/pages/paciente.js?v=3"></script>
 </body>
 </html>

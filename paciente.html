@@ -5,13 +5,15 @@
   <title>Sharelab — Paciente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{font-family:system-ui,sans-serif;margin:16px;max-width:620px}
+    body{font-family:system-ui,sans-serif;margin:16px;max-width:720px}
     h1,h2{margin:.25rem 0}
     .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
     button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
-    code.badge{font-size:1.2rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
+    code.badge{font-size:1.1rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
     p.muted{font-size:.9em;color:#555}
-    textarea{width:100%;height:180px;margin-top:1rem;font-family:ui-monospace,monospace}
+    textarea{width:100%;min-height:120px;border:1px solid #bbb;border-radius:8px;padding:.6rem}
+    .ok{color:#0a7d36}
+    .err{color:#b00020}
   </style>
 </head>
 <body>
@@ -19,9 +21,10 @@
 
   <input id="pdfInput" type="file" accept="application/pdf" />
   <p class="muted">O PDF é processado apenas no seu dispositivo. Nada é enviado a servidores.</p>
+  <p id="pdfStatus" class="muted"></p>
 
-  <h2>Pré-visualização do extrator</h2>
-  <textarea id="extractPreview" readonly placeholder="O resultado do exame aparecerá aqui..."></textarea>
+  <h2>Prévia do texto extraído</h2>
+  <textarea id="pdfPreview" placeholder="O texto do PDF aparecerá aqui após o carregamento..."></textarea>
 
   <h2>Compartilhar com o médico</h2>
   <div class="row">
@@ -32,60 +35,20 @@
   </div>
   <p id="p2pStatus" class="muted"></p>
 
-  <!-- PDF.js local (evita 404/CDN) -->
-  <script src="./vendor/pdf.min.js" onerror="console.error('Falha ao carregar vendor/pdf.min.js')"></script>
+  <!-- libs: PDF.js deve vir antes do seu JS que usa pdfjsLib -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
   <script>
-    if (window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
-    } else {
-      console.error("[PDF] pdfjsLib não está disponível. Verifique vendor/pdf.min.js");
-    }
+    // MUITO IMPORTANTE: a versão do worker deve casar com a versão acima
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js";
   </script>
 
-  <!-- Firebase (ajuste o caminho se precisar) -->
+  <!-- Firebase (se já estiver usando p/ sinalização P2P) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="./firebase-config.js" onerror="console.error('Falha ao carregar firebase-config.js')"></script>
+  <script src="firebase-config.js"></script>
 
-  <!-- Extrator + leitura do PDF -->
-  <script type="module">
-    import { extractExams } from "./js/utils/extractor.js"; // caminho RELATIVO
-    const input = document.getElementById("pdfInput");
-    const preview = document.getElementById("extractPreview");
-
-    input.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      preview.value = "Lendo PDF…";
-      try {
-        if (!window.pdfjsLib) {
-          preview.value = "Falha ao carregar PDF.js (vendor).";
-          return;
-        }
-        const buf = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-        let fullText = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const tc = await page.getTextContent();
-          fullText += tc.items.map(it => it.str).join(" ") + "\n";
-        }
-        const textLen = (fullText || "").trim().length;
-        if (textLen < 40) {
-          preview.value = "Este PDF parece não ter texto (provável PDF escaneado).\nEnvie a versão nativa do laudo.";
-          return;
-        }
-        const result = extractExams(fullText);
-        preview.value = result?.profissional || "Não consegui extrair os exames.";
-        console.log("[Extrator] Resultado:", result);
-      } catch (err) {
-        console.error(err);
-        preview.value = "Erro ao ler o PDF. Verifique o arquivo e tente novamente.";
-      }
-    });
-  </script>
-
-  <!-- P2P/envio (mantenha relativo) -->
-  <script type="module" src="./js/pages/paciente.js" onerror="console.error('Falha ao carregar js/pages/paciente.js')"></script>
+  <!-- Seu módulo da página do paciente -->
+  <script type="module" src="js/pages/paciente.js"></script>
 </body>
 </html>

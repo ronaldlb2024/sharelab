@@ -4,19 +4,24 @@
   <meta charset="utf-8" />
   <title>Sharelab — Paciente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <style>
-    body{font-family:system-ui,sans-serif;margin:16px;max-width:620px}
+    /* Estilo leve e responsivo */
+    :root { color-scheme: light dark; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         margin:16px;max-width:640px;line-height:1.35}
     h1,h2{margin:.25rem 0}
     .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
-    button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
+    button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff;cursor:pointer}
+    button:active{transform:translateY(1px)}
     code.badge{font-size:1.15rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px;background:#fafafa}
-    p.muted{font-size:.9em;color:#555}
+    p.muted{font-size:.9em;color:#666;margin:.25rem 0 0}
   </style>
 
-  <!-- PDF.js via CDN (corrige o upload/leitura) -->
+  <!-- PDF.js via CDN (essencial para ler o PDF no navegador) -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
   <script>
-    // define o worker do PDF.js
+    // Configura o worker do PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.worker.min.js";
   </script>
@@ -24,26 +29,27 @@
 <body>
   <h1>Enviar exame</h1>
 
-  <!-- Upload -->
+  <!-- Upload do PDF (processamento local) -->
   <input id="pdfInput" type="file" accept="application/pdf" />
-  <p class="muted">Processamento local. Nada é enviado a servidores.</p>
+  <p class="muted">O PDF é processado apenas no seu dispositivo. Nada é enviado a servidores.</p>
 
-  <!-- P2P: somente o essencial -->
-  <h2>Compartilhar com o médico</h2>
+  <!-- P2P para compartilhar com o médico -->
+  <h2 style="margin-top:16px">Compartilhar com o médico</h2>
   <div class="row">
     <strong>Código:</strong>
     <code id="sessionCodeDisplay" class="badge">— — — — — —</code>
-    <button id="generateCodeBtn">Novo código</button>
-    <button id="connectBtn">Conectar &amp; Enviar</button>
+    <button id="generateCodeBtn" type="button">Novo código</button>
+    <button id="connectBtn" type="button">Conectar &amp; Enviar</button>
   </div>
   <p id="p2pStatus" class="muted"></p>
 
-  <!-- Firebase compat + config -->
+  <!-- Firebase compat + sua configuração -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=6"></script>
+  <!-- ATENÇÃO: este arquivo deve existir em /public com suas chaves do projeto -->
+  <script src="firebase-config.js?v=7"></script>
 
-  <!-- Lógica da página (IDs batendo com o JS abaixo) -->
-  <script type="module" src="js/pages/paciente.js?v=6"></script>
+  <!-- Lógica da página (usa os IDs acima e envia só a linha clínica) -->
+  <script type="module" src="js/pages/paciente.js?v=7"></script>
 </body>
 </html>

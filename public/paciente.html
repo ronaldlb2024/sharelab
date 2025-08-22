@@ -6,58 +6,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{font-family:system-ui,sans-serif;margin:16px;max-width:600px}
-    h1,h2{margin-bottom:.5rem}
-    pre,code{background:#f8f8f8;border:1px solid #ddd;border-radius:6px}
-    pre{padding:.5rem;white-space:pre-wrap}
-    ul{background:#f8f8f8;border:1px solid #ddd;border-radius:6px;padding:.5rem;list-style:disc inside;margin:0}
-    .section{margin-bottom:1.5rem}
-    .row{display:flex;gap:.5rem;align-items:center}
-    button{padding:.4rem .6rem;border:1px solid #777;border-radius:6px;background:#fff;cursor:pointer}
-    button:active{transform:translateY(1px)}
+    h1,h2{margin:.25rem 0}
+    pre{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;white-space:pre-wrap}
+    ul{background:#f7f7f7;border:1px solid #ddd;border-radius:8px;padding:.6rem;list-style:disc inside;margin:0}
+    .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+    .card{margin:12px 0}
+    button,input[type="file"]{padding:.45rem .7rem;border:1px solid #888;border-radius:8px;background:#fff}
   </style>
 </head>
 <body>
-  <h1>Enviar PDF de Exame</h1>
+  <h1>Enviar exame</h1>
 
   <!-- Upload -->
-  <div class="section">
+  <div class="card">
     <input id="pdfInput" type="file" accept="application/pdf">
-    <p style="font-size:.9em;color:#555">O processamento é local. Nenhum dado clínico sai do seu dispositivo.</p>
+    <p style="font-size:.9em;color:#555">Processamento local. Nada é enviado a servidores.</p>
   </div>
 
-  <!-- Exibição de saídas -->
-  <div class="section">
-    <h2>Texto extraído</h2>
-    <pre id="output">—</pre>
-    <h2>Saída profissional (linha corrida)</h2>
+  <!-- RESULTADOS (apenas o que importa) -->
+  <div class="card">
+    <h2>Para o médico (linha clínica)</h2>
     <pre id="profissionalOutput">—</pre>
-    <h2>Saída para paciente (lista)</h2>
+
+    <h2>Para você (lista legível)</h2>
     <ul id="pacienteOutput"></ul>
-    <details style="margin-top:.5rem">
-      <summary style="cursor:pointer;font-weight:bold">Ver JSON (opcional)</summary>
-      <pre id="jsonOutput"></pre>
-    </details>
   </div>
 
-  <!-- Sessão P2P -->
-  <div class="section">
+  <!-- P2P (simples) -->
+  <div class="card">
     <h2>Compartilhar com o médico</h2>
-    <p style="font-size:.9em">Gere um código, passe ao médico e clique em “Conectar &amp; Enviar”.</p>
     <div class="row">
       <strong>Código:</strong>
-      <code id="sessionCodeDisplay" style="font-size:1.2rem;padding:.2rem .6rem">— — — — — —</code>
+      <code id="sessionCodeDisplay" style="font-size:1.15rem;padding:.2rem .5rem;border:1px solid #ccc;border-radius:6px">— — — — — —</code>
       <button id="generateCodeBtn">Novo código</button>
       <button id="connectBtn">Conectar &amp; Enviar</button>
     </div>
-    <p id="p2pStatus" style="font-size:.9em;color:#555"></p>
+    <p id="p2pStatus" style="font-size:.9em;color:#555;margin:.25rem 0 0"></p>
   </div>
 
-  <!-- Scripts -->
+  <!-- Scripts essenciais -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <!-- Copie suas credenciais para este arquivo -->
-  <script src="firebase-config.js?v=2"></script>
-  <script type="module" src="js/pages/paciente.js"></script>
+  <script src="firebase-config.js?v=3"></script>
+  <script type="module" src="js/pages/paciente.js?v=3"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 /* Médico: digita código (4–6 dígitos), conecta via RTDB e recebe payload no DataChannel. */
-import { isValidCode } from '/js/utils/sessionCode.js';
-import { joinSession } from '/js/utils/signaling-rtdb.js';
+import { isValidCode } from '../utils/sessionCode.js';
+import { joinSession } from '../utils/signaling-rtdb.js';
 
 const $ = (sel) => document.querySelector(sel);
 const elInput = $('#sessionCodeInput');

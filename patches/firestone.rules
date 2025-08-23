@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Sessões acessadas por código numérico de 4 dígitos
+    match /sessions/{code} {
+      allow read, write: if code.matches('^[0-9]{4}$');
+      // Atenção: estas regras são mínimas (demo). Endureça antes de produção.
+    }
+    match /sessions/{code}/{sub=**} {
+      allow read, write: if code.matches('^[0-9]{4}$');
+    }
+  }
+}

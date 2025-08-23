@@ -1,10 +1,7 @@
-/* public/js/pages/paciente.js
-   Paciente: gera código (4 dígitos), extrai PDF no worker, conecta via RTDB e envia payload.
-*/
+/* public/js/pages/paciente.js */
 import { newCode, isValidCode } from '../utils/sessionCode.js';
 import { createSession } from '../utils/signaling-rtdb.js';
 
-// ---------- UI ----------
 const $        = (sel) => document.querySelector(sel);
 const elFile   = $('#pdfInput');
 const elCode   = $('#sessionCodeDisplay');
@@ -12,18 +9,17 @@ const btnNew   = $('#generateCodeBtn');
 const btnConn  = $('#connectBtn');
 const elStatus = $('#p2pStatus');
 
-// ---------- Worker de extração ----------
 const worker = new Worker('js/worker.js');
 
 let extracted   = null;
 let currentCode = null;
 
-// mensagens do worker
 worker.onmessage = (ev) => {
   const d = ev.data || {};
   if (d._log) { console.log('[worker]', d._log); return; }
   const { ok, error, profissional, paciente, json } = d;
   if (!ok) {
+    console.error('[worker error]', error);
     elStatus.textContent = 'Erro na extração: ' + error;
     return;
   }
@@ -31,7 +27,6 @@ worker.onmessage = (ev) => {
   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
 };
 
-// upload PDF
 elFile?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
@@ -40,14 +35,12 @@ elFile?.addEventListener('change', async (e) => {
   worker.postMessage({ arrayBuffer: buf }, [buf]);
 });
 
-// gerar código
 btnNew?.addEventListener('click', () => {
   currentCode = newCode(4);
   elCode.textContent = currentCode.replace(/(.)/g, '$1 ').trim();
   elStatus.textContent = 'Código gerado. Clique em Conectar & Enviar para compartilhar.';
 });
 
-// conectar & enviar
 btnConn?.addEventListener('click', async () => {
   try {
     if (!extracted) {

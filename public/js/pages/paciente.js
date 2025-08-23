@@ -1,79 +1,82 @@
-/* Página do PACIENTE
-   - Gera código 4 dígitos
-   - Extrai PDF no worker (/js/worker.js)
-   - Cria sessão WebRTC e envia resultados via DataChannel
-*/
-import { newCode } from '/js/utils/sessionCode.js';
-import { createSession } from '/js/utils/signaling-firestore.js';
+/* Paciente: gera código (4–6 dígitos), extrai PDF no worker, conecta via RTDB e envia payload. */
+import { newCode, isValidCode } from '/js/utils/sessionCode.js';
+import { createSession } from '/js/utils/signaling-rtdb.js';
 
-const EL = {
-  code: document.querySelector('#pairingCode'),
-  btnShare: document.querySelector('#btnShare'),
-  pdfInput: document.querySelector('#pdfInput'),
-  outProf: document.querySelector('#outProfissional'),
-  outPac: document.querySelector('#outPaciente'),
-  outJson: document.querySelector('#outJson'),
-};
+// ---- elementos da UI
+const $ = (sel) => document.querySelector(sel);
+const elFile = $('#pdfInput');
+const elCode = $('#sessionCodeDisplay');
+const btnNew = $('#generateCodeBtn');
+const btnConn = $('#connectBtn');
+const elStatus = $('#p2pStatus');
 
-// Worker para extração local (ajuste caminho se necessário)
+// ---- worker de extração (ajuste o caminho se necessário)
 const worker = new Worker('/js/worker.js');
 
-let lastResult = null;
+// buffers de resultado
+let extracted = null;
+let currentCode = null;
+
 worker.onmessage = (ev) => {
   const { ok, error, profissional, paciente, json } = ev.data || {};
   if (!ok) {
-    alert('Erro na extração: ' + error);
+    elStatus.textContent = 'Erro na extração: ' + error;
     return;
   }
-  lastResult = { profissional, paciente, json };
-  EL.outProf.textContent = profissional || '';
-  EL.outPac.textContent = paciente || '';
-  EL.outJson.textContent = JSON.stringify(json, null, 2);
+  extracted = { profissional, paciente, json };
+  elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
 };
 
-EL.pdfInput?.addEventListener('change', async (e) => {
+// upload PDF
+elFile?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   const buf = await file.arrayBuffer();
+  elStatus.textContent = 'Processando PDF...';
   worker.postMessage({ arrayBuffer: buf }, [buf]);
 });
 
-let pc = null;
-let dc = null;
-let cleanup = null;
+// gerar código
+btnNew?.addEventListener('click', () => {
+  currentCode = newCode(4); // você pode trocar para 6 se quiser: newCode(6)
+  elCode.textContent = currentCode.replace(/(.)/g, '$1 ').trim();
+  elStatus.textContent = 'Código gerado. Clique em Conectar & Enviar para compartilhar.';
+});
 
-async function startShare() {
-  if (!lastResult) {
-    alert('Selecione um PDF e aguarde a extração antes de compartilhar.');
-    return;
-  }
-
-  // Gera e mostra código 4 dígitos
-  const code = newCode();
-  EL.code.textContent = code;
-  // RTCPeerConnection + DataChannel
-  pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-  dc = pc.createDataChannel('sharelab');
-  dc.onopen = () => {
-    try {
-      dc.send(JSON.stringify(lastResult));
-      // opcional: encerrar após enviar
-      // pc.close(); cleanup?.();
-    } catch (e) {
-      console.error('Erro ao enviar payload:', e);
+// conectar & enviar
+btnConn?.addEventListener('click', async () => {
+  try {
+    if (!extracted) {
+      elStatus.textContent = 'Selecione um PDF e aguarde a extração.';
+      return;
     }
-  };
-  dc.onclose = () => console.log('datachannel fechado');
+    if (!currentCode || !isValidCode(currentCode)) {
+      currentCode = newCode(4);
+      elCode.textContent = currentCode.replace(/(.)/g, '$1 ').trim();
+    }
 
-  const db = firebase.firestore();
-  await createSession(code, pc, db);
-  cleanup = pc.__signalingCleanup;
-}
+    // RTC + DataChannel
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    const dc = pc.createDataChannel('sharelab');
+    dc.onopen = () => {
+      try {
+        dc.send(JSON.stringify(extracted));
+        elStatus.textContent = 'Enviado ao médico. Sessão ativa.';
+        // opcional: encerrar após enviar
+        // pc.close();
+      } catch (e) {
+        elStatus.textContent = 'Falha ao enviar: ' + e;
+      }
+    };
+    dc.onclose = () => { /* sessão encerrada pelo outro lado */ };
 
-EL.btnShare?.addEventListener('click', startShare);
+    const db = firebase.database();
+    await createSession(currentCode, pc, db);
+    elStatus.textContent = `Conectando... informe o código ao médico: ${currentCode}`;
+    // limpeza quando sair
+    window.addEventListener('beforeunload', () => { try { pc.close(); pc.__signalingCleanup?.(); } catch {} }, { once: true });
 
-// limpeza ao fechar a página
-window.addEventListener('beforeunload', () => {
-  try { pc?.close(); } catch {}
-  try { cleanup?.(); } catch {}
+  } catch (err) {
+    elStatus.textContent = 'Erro: ' + (err?.message || err);
+  }
 });

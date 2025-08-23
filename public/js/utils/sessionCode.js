@@ -7,5 +7,5 @@ export function newCode(len = 4) {
 }
 
 export function isValidCode(code) {
-  return /^\d{4,6}$/.test(String(code || '').trim());
+  return /^\d{4}$/.test(String(code || '').trim());
 }

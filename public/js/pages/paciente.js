@@ -1,27 +1,31 @@
-/* Paciente: gera código (4 dígitos), extrai PDF no worker, conecta via RTDB e envia payload. */
+/* public/js/pages/paciente.js
+   Paciente: gera código (4 dígitos), extrai PDF no worker, conecta via RTDB e envia payload.
+*/
 import { newCode, isValidCode } from '../utils/sessionCode.js';
 import { createSession } from '../utils/signaling-rtdb.js';
 
-// ---- elementos da UI
-const $       = (sel) => document.querySelector(sel);
-const elFile  = $('#pdfInput');
-const elCode  = $('#sessionCodeDisplay');
-const btnNew  = $('#generateCodeBtn');
-const btnConn = $('#connectBtn');
-const elStatus= $('#p2pStatus');
+// ---------- UI ----------
+const $        = (sel) => document.querySelector(sel);
+const elFile   = $('#pdfInput');
+const elCode   = $('#sessionCodeDisplay');
+const btnNew   = $('#generateCodeBtn');
+const btnConn  = $('#connectBtn');
+const elStatus = $('#p2pStatus');
 
-// ---- worker de extração (caminho relativo ao HTML: public/paciente.html)
+// ---------- Worker de extração (caminho relativo ao paciente.html) ----------
 const worker = new Worker('js/worker.js');
 
-// buffers de resultado
+// buffers
 let extracted = null;
 let currentCode = null;
 
 // mensagens do worker (logs e resultado)
 worker.onmessage = (ev) => {
   const d = ev.data || {};
-  if (d._log) { console.log('[worker]', d._log); return; }
-
+  if (d._log) {
+    console.log('[worker]', d._log);
+    return;
+  }
   const { ok, error, profissional, paciente, json } = d;
   if (!ok) {
     elStatus.textContent = 'Erro na extração: ' + error;
@@ -60,20 +64,25 @@ btnConn?.addEventListener('click', async () => {
     }
 
     // RTC + DataChannel
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
     const dc = pc.createDataChannel('sharelab');
 
     dc.onopen = () => {
       try {
         dc.send(JSON.stringify(extracted));
         elStatus.textContent = 'Enviado ao médico. Sessão ativa.';
-        // opcional: encerrar após enviar
+        // opcional: encerrar após enviar:
         // pc.close(); pc.__signalingCleanup?.();
       } catch (e) {
         elStatus.textContent = 'Falha ao enviar: ' + e;
       }
     };
-    dc.onclose = () => { /* sessão encerrada pelo outro lado */ };
+
+    dc.onclose = () => {
+      // sessão encerrada pelo outro lado
+    };
 
     const db = firebase.database();
     await createSession(currentCode, pc, db);
@@ -84,7 +93,6 @@ btnConn?.addEventListener('click', async () => {
       try { pc.close(); } catch {}
       try { pc.__signalingCleanup?.(); } catch {}
     }, { once: true });
-
   } catch (err) {
     elStatus.textContent = 'Erro: ' + (err?.message || err);
   }

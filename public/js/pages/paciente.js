@@ -27,6 +27,13 @@ worker.onmessage = (ev) => {
   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
 };
 
+// depois de criar o worker:
+worker.onmessage = (ev) => {
+  const d = ev.data || {};
+  if (d._log) { console.log('[worker]', d._log); return; }
+  const { ok, error, profissional, paciente, json } = d;
+  if (!ok) { document.querySelector('#p2pStatus').textContent = 'Erro: ' + error; return; }
+
 // upload PDF
 elFile?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];

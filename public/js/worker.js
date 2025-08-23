@@ -1,61 +1,67 @@
 /* public/js/worker.js
-   Extrai texto de PDF com pdf.js rodando DENTRO deste Web Worker real.
-   Correção crítica: apontamos o worker do pdf.js para ESTE worker (workerPort=self),
-   evitando fake worker e o erro "document is not defined".
+   Extrai texto de PDF com pdf.js rodando DENTRO deste Web Worker.
+   - Usa este worker como worker do pdf.js (sem fake worker).
+   - Importa js/parse/*.js a partir da URL do próprio worker.
+   - Retorna mensagens de erro detalhadas (name/message/stack) e logs via _log.
 */
+
+function postLog(...args) {
+  try { self.postMessage({ _log: args.join(' ') }); } catch {}
+}
+function toErrString(err) {
+  if (!err) return 'Erro desconhecido';
+  if (typeof err === 'string') return err;
+  const name = err.name || 'Error';
+  const msg  = err.message || String(err);
+  const stk  = err.stack ? `\nstack: ${err.stack}` : '';
+  return `${name}: ${msg}${stk}`;
+}
 
 const CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build';
 
-// ---------- Carregar pdf.js e configurar para usar ESTE worker ----------
+// ---------- Carregar pdf.js e apontar para ESTE worker ----------
 (function loadPdfjs() {
   try {
     importScripts(`${CDN}/pdf.min.js`);
     if (!self.pdfjsLib) throw new Error('pdfjsLib não exposto');
-
-    // Em vez de fake worker / worker secundário:
-    // use ESTE worker para executar o core do pdf.js.
+    // use ESTE worker; evita fake worker e "document is not defined"
     pdfjsLib.GlobalWorkerOptions.workerPort = self;
-    pdfjsLib.GlobalWorkerOptions.workerSrc = null;     // garante que não tente baixar pdf.worker
-    // NÃO habilitar disableWorker aqui; queremos usar este worker de verdade.
-
-  } catch (e) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc  = null;
+    postLog('pdf.js carregado do jsDelivr');
+  } catch (e1) {
     try {
       importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.min.js');
-      if (!self.pdfjsLib) throw e;
+      if (!self.pdfjsLib) throw e1;
       pdfjsLib.GlobalWorkerOptions.workerPort = self;
-      pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+      pdfjsLib.GlobalWorkerOptions.workerSrc  = null;
+      postLog('pdf.js carregado do cdnjs');
     } catch (e2) {
       self._pdfLoadError = e2;
     }
   }
 })();
 
-// ---------- Importar módulos de parsing/format (caminho seguro p/ GitHub Pages) ----------
+// ---------- Importar módulos de parsing/format ----------
 (function importParseModules() {
-  // ex.: https://ronaldlb2024.github.io/sharelab/js/worker.js -> base .../js
-  const WORKER_BASE = self.location.href.replace(/\/worker\.js(?:\?.*)?$/, '');
-  try {
-    importScripts(
-      `${WORKER_BASE}/parse/normalize.js`,
-      `${WORKER_BASE}/parse/ref.js`,
-      `${WORKER_BASE}/parse/rules.js`,
-      `${WORKER_BASE}/parse/parse.js`,
-      `${WORKER_BASE}/format.js`      // <- se seus arquivos estão em /js/format.js, ajuste; caso contrário:
-      // `${WORKER_BASE}/parse/format.js`,
-    );
-  } catch (e) {
-    // Tente estrutura antiga (tudo dentro de /js/parse/)
+  const WORKER_BASE = self.location.href.replace(/\/worker\.js(?:\?.*)?$/, ''); // .../js
+  const mods = [
+    `${WORKER_BASE}/parse/normalize.js`,
+    `${WORKER_BASE}/parse/ref.js`,
+    `${WORKER_BASE}/parse/rules.js`,
+    `${WORKER_BASE}/parse/parse.js`,
+    `${WORKER_BASE}/parse/format.js`,
+  ];
+  const failed = [];
+  for (const m of mods) {
     try {
-      importScripts(
-        `${WORKER_BASE}/parse/normalize.js`,
-        `${WORKER_BASE}/parse/ref.js`,
-        `${WORKER_BASE}/parse/rules.js`,
-        `${WORKER_BASE}/parse/parse.js`,
-        `${WORKER_BASE}/parse/format.js`,
-      );
-    } catch (e2) {
-      self._parseLoadError = e2;
+      importScripts(m);
+      postLog('importScripts OK:', m);
+    } catch (e) {
+      failed.push(`${m} -> ${toErrString(e)}`);
     }
+  }
+  if (failed.length) {
+    self._parseLoadError = new Error('Falha ao importar módulos:\n' + failed.join('\n'));
   }
 })();
 
@@ -92,13 +98,10 @@ function reconstructLines(textContent) {
 // ---------- Extração ----------
 async function extractPdf(arrayBuffer) {
   if (!self.pdfjsLib) {
-    const msg = 'pdfjsLib não carregado.';
-    throw new Error(msg + (self._pdfLoadError ? ' ' + (self._pdfLoadError.message || self._pdfLoadError) : ''));
+    throw new Error('pdfjsLib não carregado: ' + toErrString(self._pdfLoadError));
   }
-  // use este próprio worker; evita criação de worker secundário
   const loadingTask = pdfjsLib.getDocument({
     data: arrayBuffer,
-    // opções que reduzem dependências do DOM:
     isEvalSupported: false,
     disableFontFace: true,
     useSystemFonts: true
@@ -115,7 +118,7 @@ async function extractPdf(arrayBuffer) {
   return all;
 }
 
-// ---------- Anonimização simples ----------
+// ---------- Anonimização ----------
 function anonymizeLines(lines) {
   return lines.map(l =>
     l
@@ -129,22 +132,26 @@ function anonymizeLines(lines) {
 self.onmessage = async (ev) => {
   try {
     if (self._parseLoadError) {
-      throw new Error('Falha ao carregar módulos de parsing: ' + (self._parseLoadError.message || self._parseLoadError));
+      throw self._parseLoadError;
     }
     const { arrayBuffer } = ev.data || {};
     if (!(arrayBuffer instanceof ArrayBuffer)) throw new Error('ArrayBuffer do PDF não recebido.');
 
     const rawLines = await extractPdf(arrayBuffer);
-    const anon = anonymizeLines(rawLines);
+    postLog('linhas extraídas:', String(rawLines.length));
+    if (!rawLines.length) {
+      throw new Error('PDF sem texto extraível (talvez escaneado).');
+    }
 
     if (typeof parseLabReport !== 'function' || typeof formatOutputs !== 'function') {
       throw new Error('Parser/formatador não encontrado (verifique js/parse/*.js).');
     }
 
+    const anon = anonymizeLines(rawLines);
     const parsed = parseLabReport(anon);
     const out = formatOutputs(parsed);
     self.postMessage({ ok: true, ...out, avisos: parsed.avisos || [] });
   } catch (err) {
-    self.postMessage({ ok: false, error: String(err && err.message || err) });
+    self.postMessage({ ok: false, error: toErrString(err) });
   }
 };

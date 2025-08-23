@@ -1,53 +1,47 @@
-/* Página do MÉDICO
-   - Digita código 4 dígitos
-   - Conecta via WebRTC
-   - Recebe payload (profissional, paciente, json) pelo DataChannel
-*/
+/* Médico: digita código (4–6 dígitos), conecta via RTDB e recebe payload no DataChannel. */
 import { isValidCode } from '/js/utils/sessionCode.js';
-import { joinSession } from '/js/utils/signaling-firestore.js';
+import { joinSession } from '/js/utils/signaling-rtdb.js';
 
-const EL = {
-  input: document.querySelector('#inputCode'),
-  btnJoin: document.querySelector('#btnJoin'),
-  outProf: document.querySelector('#outProfissional'),
-  outPac: document.querySelector('#outPaciente'),
-  outJson: document.querySelector('#outJson'),
-};
+const $ = (sel) => document.querySelector(sel);
+const elInput = $('#sessionCodeInput');
+const btnConn = $('#connectBtn');
+const elStatus = $('#p2pStatus');
+const elProf   = $('#profissional');
 
-let pc = null;
-let cleanup = null;
+btnConn?.addEventListener('click', async () => {
+  try {
+    const code = (elInput?.value || '').trim();
+    if (!isValidCode(code)) {
+      elStatus.textContent = 'Digite um código numérico de 4 a 6 dígitos.';
+      return;
+    }
 
-async function join() {
-  const code = (EL.input?.value || '').trim();
-  if (!isValidCode(code)) {
-    alert('Digite um código de 4 dígitos (ex.: 4821).');
-    return;
-  }
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
-  pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-
-  pc.ondatachannel = (ev) => {
-    const dc = ev.channel;
-    dc.onmessage = (e) => {
-      try {
-        const payload = JSON.parse(e.data);
-        EL.outProf.textContent = payload.profissional || '';
-        EL.outPac.textContent = payload.paciente || '';
-        EL.outJson.textContent = JSON.stringify(payload.json || {}, null, 2);
-      } catch (err) {
-        console.error('Erro ao processar mensagem:', err);
-      }
+    pc.ondatachannel = (ev) => {
+      const dc = ev.channel;
+      dc.onopen = () => { elStatus.textContent = 'Conectado. Aguardando dados...'; };
+      dc.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          elProf.textContent = payload.profissional || '—';
+          elStatus.textContent = 'Resultados recebidos.';
+          // Se quiser armazenar/exibir mais, adicione campos ou modifique o HTML
+        } catch (err) {
+          elStatus.textContent = 'Erro ao processar resposta.';
+          console.error(err);
+        }
+      };
+      dc.onclose = () => { elStatus.textContent = 'Canal encerrado.'; };
     };
-  };
 
-  const db = firebase.firestore();
-  await joinSession(code, pc, db);
-  cleanup = pc.__signalingCleanup;
-}
+    const db = firebase.database();
+    await joinSession(code, pc, db);
+    elStatus.textContent = 'Conectando...';
 
-EL.btnJoin?.addEventListener('click', join);
+    window.addEventListener('beforeunload', () => { try { pc.close(); pc.__signalingCleanup?.(); } catch {} }, { once: true });
 
-window.addEventListener('beforeunload', () => {
-  try { pc?.close(); } catch {}
-  try { cleanup?.(); } catch {}
+  } catch (err) {
+    elStatus.textContent = 'Erro: ' + (err?.message || err);
+  }
 });

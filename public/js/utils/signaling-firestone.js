@@ -1,92 +1,97 @@
-// Sinalização via Firebase Firestore para WebRTC usando um código numérico de 4 dígitos.
-// Requer firebase inicializado e 'db' = firebase.firestore()
+// Sinalização WebRTC usando Firebase **Realtime Database (RTDB)**.
+// Requer firebase inicializado e 'db' = firebase.database()
+// Estrutura: sessions/{code}/offer, answer, callerCandidates/{push}, calleeCandidates/{push}
+
+function toJSONCandidate(cand) {
+  // compat serialize
+  return cand && typeof cand.toJSON === 'function' ? cand.toJSON() : cand;
+}
 
 export async function createSession(code, pc, db) {
-  const roomRef = db.collection('sessions').doc(code);
-  const snap = await roomRef.get();
-  if (snap.exists) throw new Error('Código em uso. Gere outro.');
+  const roomRef = db.ref('sessions').child(code);
+
+  // evita colisão: se já existir 'offer' recente, peça novo código
+  const snapshot = await roomRef.child('offer').get();
+  if (snapshot.exists()) {
+    throw new Error('Código em uso. Gere outro.');
+  }
 
   // ICE (caller)
-  const callerCandidates = roomRef.collection('callerCandidates');
-  pc.onicecandidate = (event) => {
-    if (event.candidate) callerCandidates.add(event.candidate.toJSON());
+  const callerCandsRef = roomRef.child('callerCandidates');
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) callerCandsRef.push(toJSONCandidate(ev.candidate));
   };
 
+  // Offer
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  await roomRef.set({
+  await roomRef.update({
     offer: { type: offer.type, sdp: offer.sdp },
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    expireAt: firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)) // TTL 10 min
+    createdAt: firebase.database.ServerValue.TIMESTAMP,
+    ttlAt: Date.now() + 10 * 60 * 1000 // 10 min (use Regras/TTL server-side depois)
   });
 
-  // Acompanhar resposta (answer) do callee
-  const unsubRoom = roomRef.onSnapshot(async (snapshot) => {
-    const data = snapshot.data();
-    if (!pc.currentRemoteDescription && data?.answer) {
-      const answer = new RTCSessionDescription(data.answer);
-      await pc.setRemoteDescription(answer);
+  // Answer listener
+  const answerRef = roomRef.child('answer');
+  const onAnswer = answerRef.on('value', async (snap) => {
+    const ans = snap.val();
+    if (ans && !pc.currentRemoteDescription) {
+      await pc.setRemoteDescription(new RTCSessionDescription(ans));
     }
   });
 
-  // Candidatos do callee
-  const unsubCallee = roomRef.collection('calleeCandidates').onSnapshot((snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        const candidate = new RTCIceCandidate(change.doc.data());
-        pc.addIceCandidate(candidate);
-      }
-    });
+  // Callee ICE
+  const calleeCandsRef = roomRef.child('calleeCandidates');
+  const onCalleeCand = calleeCandsRef.on('child_added', (snap) => {
+    const data = snap.val();
+    if (data) pc.addIceCandidate(new RTCIceCandidate(data)).catch(()=>{});
   });
 
-  // Facilita limpeza
+  // função de limpeza
   pc.__signalingCleanup = async () => {
-    unsubRoom();
-    unsubCallee();
-    try { (await callerCandidates.get()).forEach(d=>d.ref.delete()); } catch {}
-    try { await roomRef.delete(); } catch {}
+    try { answerRef.off('value', onAnswer); } catch {}
+    try { calleeCandsRef.off('child_added', onCalleeCand); } catch {}
+    // limpeza suave: remove candidatos do caller e (opcional) a sala
+    try { const s = await callerCandsRef.get(); s.forEach(d=>d.ref.remove()); } catch {}
+    // opcional: roomRef.remove() (cuidado com reconexões)
   };
 
   return code;
 }
 
 export async function joinSession(code, pc, db) {
-  const roomRef = db.collection('sessions').doc(code);
-  const roomSnapshot = await roomRef.get();
-  if (!roomSnapshot.exists) throw new Error('Código inválido ou expirado.');
-
-  const data = roomSnapshot.data();
-  if (!data?.offer) throw new Error('Sessão sem oferta SDP.');
+  const roomRef = db.ref('sessions').child(code);
+  const roomSnap = await roomRef.get();
+  if (!roomSnap.exists() || !roomSnap.child('offer').exists()) {
+    throw new Error('Código inválido ou sessão expirada.');
+  }
 
   // ICE (callee)
-  const calleeCandidates = roomRef.collection('calleeCandidates');
-  pc.onicecandidate = (event) => {
-    if (event.candidate) calleeCandidates.add(event.candidate.toJSON());
+  const calleeCandsRef = roomRef.child('calleeCandidates');
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) calleeCandsRef.push(toJSONCandidate(ev.candidate));
   };
 
-  await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+  // Apply offer
+  const offer = roomSnap.child('offer').val();
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
+  // Create/send answer
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
+  await roomRef.child('answer').set({ type: answer.type, sdp: answer.sdp });
 
-  await roomRef.update({ answer: { type: answer.type, sdp: answer.sdp } });
-
-  // Candidatos do caller
-  const unsubCaller = roomRef.collection('callerCandidates').onSnapshot((snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        const candidate = new RTCIceCandidate(change.doc.data());
-        pc.addIceCandidate(candidate);
-      }
-    });
+  // Caller ICE listener
+  const callerCandsRef = roomRef.child('callerCandidates');
+  const onCallerCand = callerCandsRef.on('child_added', (snap) => {
+    const data = snap.val();
+    if (data) pc.addIceCandidate(new RTCIceCandidate(data)).catch(()=>{});
   });
 
-  // Facilita limpeza
   pc.__signalingCleanup = async () => {
-    unsubCaller();
-    try { (await calleeCandidates.get()).forEach(d=>d.ref.delete()); } catch {}
-    // não deletamos o roomRef aqui para permitir reconexões curtas se necessário
+    try { callerCandsRef.off('child_added', onCallerCand); } catch {}
+    try { const s = await calleeCandsRef.get(); s.forEach(d=>d.ref.remove()); } catch {}
   };
 
   return code;

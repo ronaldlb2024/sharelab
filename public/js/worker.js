@@ -1,63 +1,47 @@
 /* public/js/worker.js
-   Extrai texto do PDF com pdf.js dentro do próprio Worker.
-   - Carrega pdf.js via CDN (mesma versão do HTML: 3.10.111)
-   - Seta GlobalWorkerOptions.workerSrc
-   - Reconstrói linhas preservando colunas
-   - Devolve { profissional, paciente, json } via formatOutputs()
+   Extrai texto de PDF com pdf.js dentro de um Worker.
+   - pdf.js rodando com disableWorker=true (não tenta criar fake worker).
+   - Importa módulos de parsing/format a partir da mesma pasta js/.
+   - Reconstrói linhas preservando colunas.
 */
 
 const CDN = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build';
 
-function log(...args){ try { self.postMessage({ _log: args.map(String).join(' ') }); } catch {} }
-
-// 1) Carregar pdf.js dentro do Worker
 (function loadPdfjs() {
   try {
-    // carrega núcleo (expondo pdfjsLib no escopo global do worker)
     importScripts(`${CDN}/pdf.min.js`);
-    // setar caminho do worker secundário do pdf.js (necessário)
-    if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
-      self.pdfjsLib.GlobalWorkerOptions.workerSrc = `${CDN}/pdf.worker.min.js`;
-      log('pdfjs carregado no worker.');
-    } else {
-      throw new Error('pdfjsLib não exposto pelo pdf.min.js');
-    }
+    if (!self.pdfjsLib) throw new Error('pdfjsLib não exposto');
+
+    // rodando já num Web Worker → desabilita o worker interno
+    pdfjsLib.GlobalWorkerOptions.disableWorker = true;
   } catch (e) {
-    // último recurso: tentar uma versão estável no cdnjs
     try {
       importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.min.js');
-      if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
-        self.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.10.111/pdf.worker.min.js';
-        log('fallback cdnjs ok.');
-      } else {
-        throw e;
-      }
+      if (!self.pdfjsLib) throw e;
+      pdfjsLib.GlobalWorkerOptions.disableWorker = true;
     } catch (e2) {
-      // Se chegar aqui, não teremos pdfjs
       self._pdfLoadError = e2;
     }
   }
 })();
 
-// 2) Importar módulos de parsing/format
-//    ATENÇÃO: caminhos relativos à pasta /public/js/
-try {
-  importScripts('/js/parse/normalize.js');
-  importScripts('/js/parse/ref.js');
-  importScripts('/js/parse/rules.js');
-  importScripts('/js/parse/parse.js');
-  importScripts('/js/parse/format.js');
-} catch (e) {
-  // fallback relativo (caso sirva /public como raiz sem barra)
+// Importar módulos de parsing/format (usando base relativa à URL do worker)
+(function importParseModules() {
+  const WORKER_BASE = self.location.href.replace(/\/worker\.js(?:\?.*)?$/, '');
   try {
-    importScripts('parse/normalize.js', 'parse/ref.js', 'parse/rules.js', 'parse/parse.js', 'parse/format.js');
-  } catch (e2) {
-    self._parseLoadError = e2;
+    importScripts(
+      `${WORKER_BASE}/parse/normalize.js`,
+      `${WORKER_BASE}/parse/ref.js`,
+      `${WORKER_BASE}/parse/rules.js`,
+      `${WORKER_BASE}/parse/parse.js`,
+      `${WORKER_BASE}/parse/format.js`
+    );
+  } catch (e) {
+    self._parseLoadError = e;
   }
-}
+})();
 
-// 3) Reconstrução de linhas/colunas
+// ---------- Reconstrução de linhas ----------
 const Y_TOL = 2.0;
 const GAP_AS_TAB = 40;
 
@@ -87,25 +71,24 @@ function reconstructLines(textContent) {
   return lines;
 }
 
-// 4) Extração do PDF
+// ---------- Extração ----------
 async function extractPdf(arrayBuffer) {
   if (!self.pdfjsLib) {
-    const msg = 'pdfjsLib não carregado dentro do worker.';
-    const detail = self._pdfLoadError ? ' Detalhe: ' + (self._pdfLoadError.message || String(self._pdfLoadError)) : '';
-    throw new Error(msg + detail);
+    const msg = 'pdfjsLib não carregado.';
+    throw new Error(msg + (self._pdfLoadError ? ' ' + self._pdfLoadError : ''));
   }
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const all = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
-    const tc = await page.getTextContent(); // pode usar { includeMarkedContent: true } se precisar
+    const tc = await page.getTextContent();
     const lines = reconstructLines(tc);
     all.push(...lines);
   }
   return all;
 }
 
-// 5) Anonimização rápida (exemplo)
+// ---------- Anonimização simples ----------
 function anonymizeLines(lines) {
   return lines.map(l =>
     l
@@ -115,22 +98,24 @@ function anonymizeLines(lines) {
   );
 }
 
-// 6) Protocolo
+// ---------- Protocolo ----------
 self.onmessage = async (ev) => {
   try {
-    if (self._parseLoadError) throw new Error('Falha ao carregar módulos de parsing: ' + (self._parseLoadError.message || self._parseLoadError));
+    if (self._parseLoadError) throw new Error('Falha ao carregar módulos de parsing: ' + self._parseLoadError);
+
     const { arrayBuffer } = ev.data || {};
     if (!(arrayBuffer instanceof ArrayBuffer)) throw new Error('ArrayBuffer do PDF não recebido.');
-    const rawLines = await extractPdf(arrayBuffer);
-    log('linhas extraídas:', rawLines.length);
 
+    const rawLines = await extractPdf(arrayBuffer);
     const anon = anonymizeLines(rawLines);
+
     if (typeof parseLabReport !== 'function' || typeof formatOutputs !== 'function') {
-      throw new Error('Parser/formatador não disponível no worker (verifique importScripts de /js/parse/*).');
+      throw new Error('Parser ou formatOutputs não definidos (verifique js/parse/*.js).');
     }
 
     const parsed = parseLabReport(anon);
     const out = formatOutputs(parsed);
+
     self.postMessage({ ok: true, ...out, avisos: parsed.avisos || [] });
   } catch (err) {
     self.postMessage({ ok: false, error: String(err && err.message || err) });

@@ -4,6 +4,10 @@
    - Importa js/parse/*.js relativo à URL do worker (funciona no GitHub Pages com /sharelab).
    - Loga erros com detalhes; manda um "ready" pra checagem rápida.
 */
+// After loading pdfjsLib
+pdfjsLib.GlobalWorkerOptions.workerPort = self;
+pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+pdfjsLib.GlobalWorkerOptions.disableWorker = true;
 
 function postLog(...args){ try { self.postMessage({ _log: args.join(' ') }); } catch {} }
 function errStr(e){

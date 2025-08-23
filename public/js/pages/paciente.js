@@ -1,6 +1,6 @@
 /* Paciente: gera código (4–6 dígitos), extrai PDF no worker, conecta via RTDB e envia payload. */
-import { newCode, isValidCode } from '/js/utils/sessionCode.js';
-import { createSession } from '/js/utils/signaling-rtdb.js';
+import { newCode, isValidCode } from '../utils/sessionCode.js';
+import { createSession } from '../utils/signaling-rtdb.js';
 
 // ---- elementos da UI
 const $ = (sel) => document.querySelector(sel);

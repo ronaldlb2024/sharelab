@@ -12,20 +12,16 @@ const btnNew   = $('#generateCodeBtn');
 const btnConn  = $('#connectBtn');
 const elStatus = $('#p2pStatus');
 
-// ---------- Worker de extração (caminho relativo ao paciente.html) ----------
+// ---------- Worker de extração ----------
 const worker = new Worker('js/worker.js');
 
-// buffers
-let extracted = null;
+let extracted   = null;
 let currentCode = null;
 
-// mensagens do worker (logs e resultado)
+// mensagens do worker
 worker.onmessage = (ev) => {
   const d = ev.data || {};
-  if (d._log) {
-    console.log('[worker]', d._log);
-    return;
-  }
+  if (d._log) { console.log('[worker]', d._log); return; }
   const { ok, error, profissional, paciente, json } = d;
   if (!ok) {
     elStatus.textContent = 'Erro na extração: ' + error;
@@ -46,7 +42,7 @@ elFile?.addEventListener('change', async (e) => {
 
 // gerar código
 btnNew?.addEventListener('click', () => {
-  currentCode = newCode(4); // se quiser 6 dígitos: newCode(6)
+  currentCode = newCode(4);
   elCode.textContent = currentCode.replace(/(.)/g, '$1 ').trim();
   elStatus.textContent = 'Código gerado. Clique em Conectar & Enviar para compartilhar.';
 });
@@ -63,32 +59,22 @@ btnConn?.addEventListener('click', async () => {
       elCode.textContent = currentCode.replace(/(.)/g, '$1 ').trim();
     }
 
-    // RTC + DataChannel
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     const dc = pc.createDataChannel('sharelab');
 
     dc.onopen = () => {
       try {
         dc.send(JSON.stringify(extracted));
         elStatus.textContent = 'Enviado ao médico. Sessão ativa.';
-        // opcional: encerrar após enviar:
-        // pc.close(); pc.__signalingCleanup?.();
       } catch (e) {
         elStatus.textContent = 'Falha ao enviar: ' + e;
       }
-    };
-
-    dc.onclose = () => {
-      // sessão encerrada pelo outro lado
     };
 
     const db = firebase.database();
     await createSession(currentCode, pc, db);
     elStatus.textContent = `Conectando... informe o código ao médico: ${currentCode}`;
 
-    // limpeza ao sair
     window.addEventListener('beforeunload', () => {
       try { pc.close(); } catch {}
       try { pc.__signalingCleanup?.(); } catch {}

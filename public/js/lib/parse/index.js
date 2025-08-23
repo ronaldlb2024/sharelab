@@ -1,4 +1,4 @@
-// public/js/lib/parser/index.js
+// public/js/lib/parse/index.js
 import fleuryParser  from './fleuryParser.js';
 import dasaParser    from './dasaParser.js';
 import genericParser from './genericParser.js';

@@ -1,24 +1,28 @@
-/* Paciente: gera código (4–6 dígitos), extrai PDF no worker, conecta via RTDB e envia payload. */
+/* Paciente: gera código (4 dígitos), extrai PDF no worker, conecta via RTDB e envia payload. */
 import { newCode, isValidCode } from '../utils/sessionCode.js';
 import { createSession } from '../utils/signaling-rtdb.js';
 
 // ---- elementos da UI
-const $ = (sel) => document.querySelector(sel);
-const elFile = $('#pdfInput');
-const elCode = $('#sessionCodeDisplay');
-const btnNew = $('#generateCodeBtn');
+const $       = (sel) => document.querySelector(sel);
+const elFile  = $('#pdfInput');
+const elCode  = $('#sessionCodeDisplay');
+const btnNew  = $('#generateCodeBtn');
 const btnConn = $('#connectBtn');
-const elStatus = $('#p2pStatus');
+const elStatus= $('#p2pStatus');
 
-// ---- worker de extração (ajuste o caminho se necessário)
-const worker = new Worker('/js/worker.js');
+// ---- worker de extração (caminho relativo ao HTML: public/paciente.html)
+const worker = new Worker('js/worker.js');
 
 // buffers de resultado
 let extracted = null;
 let currentCode = null;
 
+// mensagens do worker (logs e resultado)
 worker.onmessage = (ev) => {
-  const { ok, error, profissional, paciente, json } = ev.data || {};
+  const d = ev.data || {};
+  if (d._log) { console.log('[worker]', d._log); return; }
+
+  const { ok, error, profissional, paciente, json } = d;
   if (!ok) {
     elStatus.textContent = 'Erro na extração: ' + error;
     return;
@@ -26,13 +30,6 @@ worker.onmessage = (ev) => {
   extracted = { profissional, paciente, json };
   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
 };
-
-// depois de criar o worker:
-worker.onmessage = (ev) => {
-  const d = ev.data || {};
-  if (d._log) { console.log('[worker]', d._log); return; }
-  const { ok, error, profissional, paciente, json } = d;
-  if (!ok) { document.querySelector('#p2pStatus').textContent = 'Erro: ' + error; return; }
 
 // upload PDF
 elFile?.addEventListener('change', async (e) => {
@@ -45,7 +42,7 @@ elFile?.addEventListener('change', async (e) => {
 
 // gerar código
 btnNew?.addEventListener('click', () => {
-  currentCode = newCode(4); // você pode trocar para 6 se quiser: newCode(6)
+  currentCode = newCode(4); // se quiser 6 dígitos: newCode(6)
   elCode.textContent = currentCode.replace(/(.)/g, '$1 ').trim();
   elStatus.textContent = 'Código gerado. Clique em Conectar & Enviar para compartilhar.';
 });
@@ -65,12 +62,13 @@ btnConn?.addEventListener('click', async () => {
     // RTC + DataChannel
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     const dc = pc.createDataChannel('sharelab');
+
     dc.onopen = () => {
       try {
         dc.send(JSON.stringify(extracted));
         elStatus.textContent = 'Enviado ao médico. Sessão ativa.';
         // opcional: encerrar após enviar
-        // pc.close();
+        // pc.close(); pc.__signalingCleanup?.();
       } catch (e) {
         elStatus.textContent = 'Falha ao enviar: ' + e;
       }
@@ -80,8 +78,12 @@ btnConn?.addEventListener('click', async () => {
     const db = firebase.database();
     await createSession(currentCode, pc, db);
     elStatus.textContent = `Conectando... informe o código ao médico: ${currentCode}`;
-    // limpeza quando sair
-    window.addEventListener('beforeunload', () => { try { pc.close(); pc.__signalingCleanup?.(); } catch {} }, { once: true });
+
+    // limpeza ao sair
+    window.addEventListener('beforeunload', () => {
+      try { pc.close(); } catch {}
+      try { pc.__signalingCleanup?.(); } catch {}
+    }, { once: true });
 
   } catch (err) {
     elStatus.textContent = 'Erro: ' + (err?.message || err);

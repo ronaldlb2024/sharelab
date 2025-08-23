@@ -1,6 +1,6 @@
 // public/js/pages/paciente.js
 import { anonimizar } from '../lib/anonimizador.js';
-import { detectParser } from '../lib/parsers/index.js';
+import { parseReport as detectParser } from '../lib/parse/index.js';
 import { formatLinhaProfissional, formatListaPaciente } from '../lib/parse/report.js';
 
 window.addEventListener('DOMContentLoaded', () => {

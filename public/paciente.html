@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <title>Sharelab — Paciente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Em GitHub Pages use caminho relativo (sem / na frente) -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     body{font-family:system-ui,sans-serif;margin:16px;max-width:620px}
     h1,h2{margin:.25rem 0}
@@ -28,5 +29,13 @@
     <button id="connectBtn">Conectar &amp; Enviar</button>
   </div>
   <p id="p2pStatus" class="muted"></p>
+
+  <!-- libs (Firebase) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <!-- seu config -->
+  <script src="firebase-config.js"></script>
+  <!-- página: aqui é onde existe o const worker em js/pages/paciente.js -->
+  <script type="module" src="js/pages/paciente.js?v=4"></script>
 </body>
 </html>

@@ -9,7 +9,8 @@ const btnNew   = $('#generateCodeBtn');
 const btnConn  = $('#connectBtn');
 const elStatus = $('#p2pStatus');
 
-const worker = new Worker('js/worker.js');
+// worker com cache-buster (?v=4) → evita rodar versão antiga no GitHub Pages
+const worker = new Worker('js/worker.js?v=4');
 
 let extracted=null, currentCode=null;
 
@@ -17,17 +18,18 @@ let extracted=null, currentCode=null;
 worker.onmessage = (ev)=>{
   const d = ev.data||{};
   if (d._log){ console.log('[worker]', d._log); return; }
-  const { ok, error, profissional, paciente, json } = d;
+  const { ok, error, profissional, paciente, json, diag } = d;
   if (!ok){
-    console.error('[worker error]', error);
+    console.error('[worker error]', error, diag);
     elStatus.textContent = 'Erro na extração: ' + (error || 'sem detalhes');
     return;
   }
+  if (diag) console.log('[worker diag]', diag);
   extracted = { profissional, paciente, json };
   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
 };
 
-// CAPTURA ERROS NÃO-INTERCEPTADOS DO WORKER (carregamento de script, etc.)
+// captura erros não-interceptados do worker
 worker.onerror = (e)=>{
   console.error('[worker onerror]', e.message, e.filename, e.lineno);
   elStatus.textContent = `Erro no worker: ${e.message} (${e.filename}:${e.lineno})`;
@@ -65,7 +67,10 @@ btnConn?.addEventListener('click', async ()=>{
     const pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
     const dc = pc.createDataChannel('sharelab');
     dc.onopen = ()=>{
-      try{ dc.send(JSON.stringify(extracted)); elStatus.textContent='Enviado ao médico. Sessão ativa.'; }
+      try{ 
+        dc.send(JSON.stringify(extracted)); 
+        elStatus.textContent='Enviado ao médico. Sessão ativa.'; 
+      }
       catch(e){ elStatus.textContent='Falha ao enviar: '+e; }
     };
 

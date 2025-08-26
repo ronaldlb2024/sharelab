@@ -1,16 +1,12 @@
-/* public/js/worker.js
-   Estratégia robusta p/ pdf.js dentro do SEU Web Worker:
-   1) Tenta usar este próprio worker como pdf worker (workerPort = self).
-   2) Se falhar, usa disableWorker: true no getDocument (sem fake worker).
-*/
-
+/* public/js/worker.js */
 const DIAG = { imports: [], mode: null, notes: [] };
+
 function safeImport(src){
   try{ self.importScripts(src); DIAG.imports.push({src, ok:true}); }
   catch(e){ DIAG.imports.push({src, ok:false, error:String(e?.message||e)}); throw e; }
 }
 
-// 1) Carrega apenas pdf.min.js (NÃO carregue pdf.worker.min.js aqui)
+// Carrega pdf.js (somente core). Evita fake worker automático.
 (() => {
   let ok = false;
   try { safeImport('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'); ok = true; } catch {}
@@ -21,21 +17,18 @@ function safeImport(src){
   }
 })();
 
-// 2) Importa seus módulos (sem index.js)
+// Importa módulos do parser
 try{
   safeImport('parse/normalize.js');
-  safeImport('parse/ref.js');
+  try{ safeImport('parse/ref.js'); }catch{}
   safeImport('parse/rules.js');
   safeImport('parse/parse.js');
   safeImport('parse/format.js');
-  try { safeImport('lib/anonimizador.js'); } catch {}
 }catch(e){
   self.postMessage({ ok:false, error:'Falha ao importar módulos parse/*.js', diag: DIAG });
-  // não retornamos; deixamos seguir para mostrar diag completo no catch final
 }
 
 const Y_TOL = 2.0, GAP_AS_TAB = 40;
-
 function reconstructLines(tc){
   const rows=[];
   for(const it of (tc.items||[])){
@@ -61,37 +54,30 @@ function reconstructLines(tc){
   return lines;
 }
 
-// 3) Modo preferido: usar ESTE worker como pdf worker
+// Configura pdf.js para usar ESTE worker; se falhar, desabilita worker interno.
 let useDisableWorkerFallback = false;
 try{
   if (!self.pdfjsLib) throw new Error('pdfjsLib não carregado');
   if (!self.pdfjsLib.GlobalWorkerOptions) throw new Error('GlobalWorkerOptions ausente');
-
-  // chave: aponta a “porta” do worker para este próprio worker
+  // Usa o próprio worker (sem precisar de URL de workerSrc)
   self.pdfjsLib.GlobalWorkerOptions.workerPort = self;
-  // recomenda-se NÃO setar workerSrc quando se usa workerPort
   DIAG.mode = 'workerPort=self';
   DIAG.notes.push('Usando este Web Worker como pdf worker (workerPort=self).');
 }catch(e){
-  // Se der qualquer problema, caímos para o fallback
   useDisableWorkerFallback = true;
   DIAG.mode = 'disableWorker';
-  DIAG.notes.push('Fallback: disableWorker=true (fake worker desativado). Motivo: ' + String(e?.message||e));
+  DIAG.notes.push('Fallback: disableWorker=true. Motivo: ' + String(e?.message||e));
 }
 
 async function extractPdf(buf){
   if (!self.pdfjsLib) throw new Error('pdfjsLib não carregado');
   const params = { data: buf };
-
-  // Fallback robusto: desliga completamente o worker interno
   if (useDisableWorkerFallback) {
-    params.disableWorker     = true;
-    params.isEvalSupported   = false;
-    params.useWorkerFetch    = false;
+    params.disableWorker   = true;
+    params.isEvalSupported = false;
+    params.useWorkerFetch  = false;
   }
-
   const pdf = await pdfjsLib.getDocument(params).promise;
-
   const all=[];
   for(let p=1;p<=pdf.numPages;p++){
     const page=await pdf.getPage(p);
@@ -117,10 +103,8 @@ self.onmessage = async (ev)=>{
     const lines = await extractPdf(arrayBuffer);
     const anon  = (typeof self.anonimizeLines === 'function') ? self.anonimizeLines(lines) : anonymizeLinesFallback(lines);
 
-    if (typeof self.parseLabReport !== 'function')
-      throw new Error('parseLabReport ausente (confira parse/parse.js)');
-    if (typeof self.formatOutputs !== 'function')
-      throw new Error('formatOutputs ausente (confira parse/format.js)');
+    if (typeof self.parseLabReport !== 'function') throw new Error('parseLabReport ausente (parse/parse.js)');
+    if (typeof self.formatOutputs !== 'function') throw new Error('formatOutputs ausente (parse/format.js)');
 
     const parsed = self.parseLabReport(anon);
     const out    = self.formatOutputs(parsed);

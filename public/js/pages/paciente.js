@@ -9,12 +9,10 @@ const btnNew   = $('#generateCodeBtn');
 const btnConn  = $('#connectBtn');
 const elStatus = $('#p2pStatus');
 
-// worker com cache-buster (?v=4) → evita rodar versão antiga no GitHub Pages
-const worker = new Worker('js/worker.js?v=4');
+const worker = new Worker('js/worker.js?v=7');
 
 let extracted=null, currentCode=null;
 
-// mensagens do worker
 worker.onmessage = (ev)=>{
   const d = ev.data||{};
   if (d._log){ console.log('[worker]', d._log); return; }
@@ -29,7 +27,6 @@ worker.onmessage = (ev)=>{
   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
 };
 
-// captura erros não-interceptados do worker
 worker.onerror = (e)=>{
   console.error('[worker onerror]', e.message, e.filename, e.lineno);
   elStatus.textContent = `Erro no worker: ${e.message} (${e.filename}:${e.lineno})`;
@@ -39,7 +36,6 @@ worker.onmessageerror = (e)=>{
   elStatus.textContent = 'Erro de serialização na mensagem do worker.';
 };
 
-// upload PDF
 elFile?.addEventListener('change', async (e)=>{
   const file = e.target.files?.[0];
   if (!file) return;
@@ -48,14 +44,12 @@ elFile?.addEventListener('change', async (e)=>{
   worker.postMessage({ arrayBuffer: buf }, [buf]);
 });
 
-// gerar código
 btnNew?.addEventListener('click', ()=>{
   currentCode = newCode(4);
   elCode.textContent = currentCode.replace(/(.)/g,'$1 ').trim();
   elStatus.textContent = 'Código gerado. Clique em Conectar & Enviar para compartilhar.';
 });
 
-// conectar & enviar
 btnConn?.addEventListener('click', async ()=>{
   try{
     if(!extracted){ elStatus.textContent='Selecione um PDF e aguarde a extração.'; return; }
@@ -63,25 +57,16 @@ btnConn?.addEventListener('click', async ()=>{
       currentCode = newCode(4);
       elCode.textContent = currentCode.replace(/(.)/g,'$1 ').trim();
     }
-
     const pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
     const dc = pc.createDataChannel('sharelab');
     dc.onopen = ()=>{
-      try{ 
-        dc.send(JSON.stringify(extracted)); 
-        elStatus.textContent='Enviado ao médico. Sessão ativa.'; 
-      }
+      try{ dc.send(JSON.stringify(extracted)); elStatus.textContent='Enviado ao médico. Sessão ativa.'; }
       catch(e){ elStatus.textContent='Falha ao enviar: '+e; }
     };
-
     const db = firebase.database();
     await createSession(currentCode, pc, db);
     elStatus.textContent = `Conectando... informe o código ao médico: ${currentCode}`;
-
-    window.addEventListener('beforeunload', ()=>{
-      try{ pc.close(); }catch{}
-      try{ pc.__signalingCleanup?.(); }catch{}
-    }, { once:true });
+    window.addEventListener('beforeunload', ()=>{ try{ pc.close(); }catch{} try{ pc.__signalingCleanup?.(); }catch{} }, { once:true });
   }catch(err){
     elStatus.textContent = 'Erro: ' + (err?.message || err);
   }

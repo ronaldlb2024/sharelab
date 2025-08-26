@@ -1,31 +1,36 @@
 /* public/js/worker.js */
-const DIAG = { imports: [], mode: null, notes: [] };
+const DIAG = { imports: [], mode: null };
 
 function safeImport(src){
   try{ self.importScripts(src); DIAG.imports.push({src, ok:true}); }
   catch(e){ DIAG.imports.push({src, ok:false, error:String(e?.message||e)}); throw e; }
 }
 
-// Carrega pdf.js (somente core). Evita fake worker automático.
+// Carrega pdf.js no próprio worker (CDN)
 (() => {
   let ok = false;
   try { safeImport('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'); ok = true; } catch {}
-  if (!ok) {
-    try { safeImport('/vendor/pdfjs/pdf.min.js'); ok = true; } catch (e) {
-      self.postMessage({ ok:false, error:'Falha ao carregar pdf.js', diag: DIAG }); return;
-    }
-  }
+  if (!ok) { self.postMessage({ ok:false, error:'Falha ao carregar pdf.js', diag: DIAG }); return; }
 })();
 
-// Importa módulos do parser
+// (opcional) import dos módulos do parser
 try{
   safeImport('parse/normalize.js');
-  try{ safeImport('parse/ref.js'); }catch{}
   safeImport('parse/rules.js');
   safeImport('parse/parse.js');
   safeImport('parse/format.js');
 }catch(e){
   self.postMessage({ ok:false, error:'Falha ao importar módulos parse/*.js', diag: DIAG });
+}
+
+let disable = false;
+try{
+  if (!self.pdfjsLib?.GlobalWorkerOptions) throw new Error('GlobalWorkerOptions ausente');
+  self.pdfjsLib.GlobalWorkerOptions.workerPort = self;  // sem workerSrc
+  DIAG.mode = 'workerPort=self';
+}catch(e){
+  disable = true;          // fallback
+  DIAG.mode = 'disableWorker';
 }
 
 const Y_TOL = 2.0, GAP_AS_TAB = 40;
@@ -39,8 +44,7 @@ function reconstructLines(tc){
     row.runs.push({ x, str: s });
   }
   rows.sort((a,b)=> b.y - a.y);
-  const lines=[];
-  for(const r of rows){
+  return rows.map(r=>{
     r.runs.sort((a,b)=> a.x - b.x);
     let acc='';
     for(let i=0;i<r.runs.length;i++){
@@ -48,69 +52,40 @@ function reconstructLines(tc){
       if(i>0) acc += (c.x - (p?.x ?? c.x) > GAP_AS_TAB) ? '\t' : ' ';
       acc += c.str;
     }
-    const clean = acc.replace(/\u00A0/g,' ').replace(/[ ]{2,}/g,' ').trim();
-    if(clean) lines.push(clean);
-  }
-  return lines;
-}
-
-// Configura pdf.js para usar ESTE worker; se falhar, desabilita worker interno.
-let useDisableWorkerFallback = false;
-try{
-  if (!self.pdfjsLib) throw new Error('pdfjsLib não carregado');
-  if (!self.pdfjsLib.GlobalWorkerOptions) throw new Error('GlobalWorkerOptions ausente');
-  // Usa o próprio worker (sem precisar de URL de workerSrc)
-  self.pdfjsLib.GlobalWorkerOptions.workerPort = self;
-  DIAG.mode = 'workerPort=self';
-  DIAG.notes.push('Usando este Web Worker como pdf worker (workerPort=self).');
-}catch(e){
-  useDisableWorkerFallback = true;
-  DIAG.mode = 'disableWorker';
-  DIAG.notes.push('Fallback: disableWorker=true. Motivo: ' + String(e?.message||e));
+    return acc.replace(/\u00A0/g,' ').replace(/[ ]{2,}/g,' ').trim();
+  }).filter(Boolean);
 }
 
 async function extractPdf(buf){
   if (!self.pdfjsLib) throw new Error('pdfjsLib não carregado');
   const params = { data: buf };
-  if (useDisableWorkerFallback) {
-    params.disableWorker   = true;
-    params.isEvalSupported = false;
-    params.useWorkerFetch  = false;
-  }
+  if (disable) { params.disableWorker = true; params.isEvalSupported = false; }
   const pdf = await pdfjsLib.getDocument(params).promise;
-  const all=[];
+  const lines=[];
   for(let p=1;p<=pdf.numPages;p++){
     const page=await pdf.getPage(p);
     const tc=await page.getTextContent();
-    all.push(...reconstructLines(tc));
+    lines.push(...reconstructLines(tc));
   }
-  return all;
-}
-
-function anonymizeLinesFallback(lines){
-  return lines.map(l=>l
-    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g,'[CPF]')
-    .replace(/\b(\d{2}\/){2}\d{4}\b/g,'[DATA]')
-    .replace(/(Paciente|Nome|Conv[eê]nio)\s*:.*$/i,'$1: [REMOVIDO]')
-  );
+  return lines;
 }
 
 self.onmessage = async (ev)=>{
   try{
-    const { arrayBuffer } = ev.data || {};
-    if (!(arrayBuffer instanceof ArrayBuffer)) throw new Error('ArrayBuffer do PDF não recebido');
+    const buf = ev.data?.arrayBuffer;
+    if (!(buf instanceof ArrayBuffer)) throw new Error('ArrayBuffer do PDF não recebido');
+    const lines = await extractPdf(buf);
 
-    const lines = await extractPdf(arrayBuffer);
-    const anon  = (typeof self.anonimizeLines === 'function') ? self.anonimizeLines(lines) : anonymizeLinesFallback(lines);
+    const parsed = (typeof self.parseLabReport==='function')
+      ? self.parseLabReport(lines)
+      : { items: [] };
 
-    if (typeof self.parseLabReport !== 'function') throw new Error('parseLabReport ausente (parse/parse.js)');
-    if (typeof self.formatOutputs !== 'function') throw new Error('formatOutputs ausente (parse/format.js)');
+    const out = (typeof self.formatOutputs==='function')
+      ? self.formatOutputs(parsed)
+      : { profissional: lines.join(' '), paciente: lines.join('\n'), json: { itens: [] } };
 
-    const parsed = self.parseLabReport(anon);
-    const out    = self.formatOutputs(parsed);
-
-    self.postMessage({ ok:true, ...out, diag: DIAG, avisos: parsed.avisos || [] });
+    self.postMessage({ ok:true, ...out, diag: DIAG });
   }catch(err){
-    self.postMessage({ ok:false, error: String(err?.message||err), diag: DIAG });
+    self.postMessage({ ok:false, error: String(err?.message||err) });
   }
 };

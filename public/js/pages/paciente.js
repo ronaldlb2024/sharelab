@@ -1,6 +1,8 @@
 /* public/js/pages/paciente.js */
 import { newCode, isValidCode } from '../utils/sessionCode.js';
 import { createSession } from '../utils/signaling-rtdb.js';
+// Adicione a importação do Firebase se necessário
+// import { database } from 'firebase/database';
 
 const $        = (sel)=>document.querySelector(sel);
 const elFile   = $('#pdfInput');
@@ -32,6 +34,10 @@ function showCode(code) {
 
 worker.onmessage = (ev)=>{
   const d = ev.data||{};
+  if (d._log) { 
+    console.log('[worker]', d._log); 
+    return; 
+  }
   const { ok, error, profissional, paciente, json, diag } = d;
   if (!ok){
     console.error('[worker error]', error, diag);
@@ -47,6 +53,7 @@ worker.onerror = (e)=>{
   console.error('[worker onerror]', e.message, e.filename, e.lineno);
   elStatus.textContent = `Erro no worker: ${e.message} (${e.filename}:${e.lineno})`;
 };
+
 worker.onmessageerror = (e)=>{
   console.error('[worker onmessageerror]', e);
   elStatus.textContent = 'Erro de serialização na mensagem do worker.';
@@ -96,10 +103,12 @@ btnConn?.addEventListener('click', async ()=>{
         console.error('[paciente] send error', e);
       }
     };
+    
     dc.onerror = (e)=> {
       console.error('[paciente] datachannel error', e);
       elStatus.textContent = 'Erro no canal de dados.';
     };
+    
     dc.onclose = ()=> {
       elStatus.textContent = 'Canal fechado.';
     };
@@ -115,13 +124,14 @@ btnConn?.addEventListener('click', async ()=>{
       }
     };
 
+    // Certifique-se de que o Firebase está inicializado e disponível
     const db = firebase.database();
     await createSession(currentCode, pc, db);
 
     // cleanup na navegação
     window.addEventListener('beforeunload', ()=>{
       try { pc?.close(); } catch {}
-      try { pc?.__signalingCleanup?.(); } catch {}
+      try { if (pc?.__signalingCleanup) pc.__signalingCleanup(); } catch {}
     }, { once:true });
 
   } catch (err) {
@@ -129,32 +139,5 @@ btnConn?.addEventListener('click', async ()=>{
     console.error('[paciente] connect error', err);
     try { pc?.close(); } catch {}
     setBusy(false);
-    - worker.onmessage = (ev)=>{
--   const d = ev.data||{};
--   if (d._log){ console.log('[worker]', d._log); return; }
--   const { ok, error, profissional, paciente, json, diag } = d;
--   if (!ok){
--     console.error('[worker error]', error, diag);
--     elStatus.textContent = 'Erro na extração: ' + (error || 'sem detalhes');
--     return;
--   }
--   if (diag) console.log('[worker diag]', diag);
--   extracted = { profissional, paciente, json };
--   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
-- };
-+ worker.onmessage = (ev)=>{
-+   const d = ev.data || {};
-+   if (d._log) { console.log('[worker]', d._log); return; }
-+   const { ok, error, profissional, paciente, json, diag } = d;
-+   if (!ok) {
-+     console.error('[worker error]', error, diag);
-+     elStatus.textContent = 'Erro na extração: ' + (error || 'sem detalhes');
-+     if (diag) console.debug('[worker diag]', diag);
-+     return;
-+   }
-+   if (diag) console.debug('[worker diag]', diag);
-+   extracted = { profissional, paciente, json };
-+   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
-+ };
   }
 });

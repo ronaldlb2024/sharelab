@@ -1,7 +1,7 @@
 /* public/js/worker.js
    Worker dedicado para extração local do PDF:
    - Carrega pdf.js via CDN dentro do worker.
-   - Desativa o worker interno do pdf.js (disableWorker: true).
+   - Configura corretamente o GlobalWorkerOptions mesmo com disableWorker.
    - Extrai texto de todas as páginas.
    - Tenta usar /js/extractor.js (MVP canivete). Se não existir, devolve texto bruto.
 */
@@ -18,14 +18,25 @@
   // ---------- Carregamento de dependências no próprio worker ----------
   // 1) pdf.js (somente a lib principal; sem pdf.worker.* porque vamos desativar o worker interno)
   try {
-    importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js');
+    importScripts('https://cdn.jsdelivr.net/npm/pdf.js-dist@3.10.111/build/pdf.min.js');
     diag('pdfjs loaded');
   } catch (e) {
     postMessage({ ok: false, error: 'Falha ao carregar pdf.js no worker', diag: { ...DIAG, error: String(e) } });
     return;
   }
 
-  // 2) Extrator (opcional). Se existir no projeto, usamos. Senão, devolvemos texto simples.
+  // 2) Configurar o workerSrc mesmo com disableWorker (necessário para evitar o erro)
+  try {
+    if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
+      // Configura um workerSrc válido, mesmo que não seja usado com disableWorker
+      self.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdf.js-dist@3.10.111/build/pdf.worker.min.js';
+      diag('pdfjs workerSrc configured');
+    }
+  } catch (e) {
+    diag('workerSrc config failed', String(e));
+  }
+
+  // 3) Extrator (opcional). Se existir no projeto, usamos. Senão, devolvemos texto simples.
   let extractFromText = null;
   try {
     // Caminho relativo ao worker. Ajuste se seu arquivo estiver em outro lugar.
@@ -42,15 +53,6 @@
 
   // ---------- Funções de extração ----------
   async function extractTextFromPDF(arrayBuffer) {
-    // Em worker dedicado: desative o worker interno do pdf.js
-    try {
-      // Algumas versões exigem isso; outras respeitam a flag no getDocument.
-      if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
-        // Não aponte workerSrc aqui; vamos usar disableWorker no getDocument.
-        self.pdfjsLib.GlobalWorkerOptions.workerSrc = null;
-      }
-    } catch (_) {}
-
     const loadingTask = self.pdfjsLib.getDocument({
       data: arrayBuffer,
       disableWorker: true,          // <- chave para não tentar criar outro worker
@@ -97,7 +99,7 @@
         try {
           const res = extractFromText(text);
           // Transforma res do extractor em nossas três vistas padrão.
-          // Se o extractor já gera shareText, usamos como “paciente”.
+          // Se o extractor já gera shareText, usamos como "paciente".
           const share = res && res.shareText ? res.shareText : null;
           const itens = (res && res.analytes) ? res.analytes.map(a => ({
             parametro_norm: a.key,
@@ -144,7 +146,7 @@
 
       postMessage({ ok: true, ...out, diag: DIAG });
     } catch (err) {
-      // Erro “falhou sem detalhes” resolvido aqui: sempre manda string legível
+      // Erro "falhou sem detalhes" resolvido aqui: sempre manda string legível
       const message = (err && (err.message || err.toString())) || 'Erro desconhecido';
       postMessage({ ok: false, error: message, diag: DIAG });
     }

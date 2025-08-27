@@ -129,5 +129,32 @@ btnConn?.addEventListener('click', async ()=>{
     console.error('[paciente] connect error', err);
     try { pc?.close(); } catch {}
     setBusy(false);
+    - worker.onmessage = (ev)=>{
+-   const d = ev.data||{};
+-   if (d._log){ console.log('[worker]', d._log); return; }
+-   const { ok, error, profissional, paciente, json, diag } = d;
+-   if (!ok){
+-     console.error('[worker error]', error, diag);
+-     elStatus.textContent = 'Erro na extração: ' + (error || 'sem detalhes');
+-     return;
+-   }
+-   if (diag) console.log('[worker diag]', diag);
+-   extracted = { profissional, paciente, json };
+-   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
+- };
++ worker.onmessage = (ev)=>{
++   const d = ev.data || {};
++   if (d._log) { console.log('[worker]', d._log); return; }
++   const { ok, error, profissional, paciente, json, diag } = d;
++   if (!ok) {
++     console.error('[worker error]', error, diag);
++     elStatus.textContent = 'Erro na extração: ' + (error || 'sem detalhes');
++     if (diag) console.debug('[worker diag]', diag);
++     return;
++   }
++   if (diag) console.debug('[worker diag]', diag);
++   extracted = { profissional, paciente, json };
++   elStatus.textContent = 'Extração concluída. Pronto para compartilhar.';
++ };
   }
 });

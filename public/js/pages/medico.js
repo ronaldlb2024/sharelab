@@ -1,13 +1,30 @@
-/* public/js/pages/medico.js */
+/* public/js/pages/medico.js
+ * Lógica da página do médico. Permite que o profissional insira o
+ * código de sessão fornecido pelo paciente e receba os resultados
+ * extraídos através de um canal de dados WebRTC.
+ */
 import { joinSession } from '../utils/signaling-rtdb.js';
 
-const $ = (sel)=>document.querySelector(sel);
-const elInput  = $('#sessionCodeInput');
-const btnConn  = $('#connectBtn');
-const elStatus = $('#p2pStatus');
-const elProf   = $('#profissional');
+// Inicializa o Firebase caso ainda não tenha sido inicializado. Isso é
+// necessário para acessar o Realtime Database. Se a aplicação já estiver
+// inicializada em outra parte do código, a chamada será ignorada.
+if (typeof firebase !== 'undefined') {
+  try {
+    if (!firebase.apps || firebase.apps.length === 0) {
+      firebase.initializeApp(window.FIREBASE_CONFIG);
+    }
+  } catch (err) {
+    // Silencia exceções de inicialização duplicada.
+  }
+}
 
-let pc = null;      // RTC PeerConnection atual
+const $ = (sel) => document.querySelector(sel);
+const elInput = $('#sessionCodeInput');
+const btnConn = $('#connectBtn');
+const elStatus = $('#p2pStatus');
+const elProf = $('#profissional');
+
+let pc = null; // PeerConnection atual
 let joined = false; // evita múltiplas conexões
 
 function setBusy(busy) {
@@ -21,22 +38,27 @@ function setBusy(busy) {
 }
 
 function safeClose() {
-  try { pc?.close(); } catch {}
+  try {
+    pc?.close();
+  } catch {}
   pc = null;
   joined = false;
 }
 
-btnConn?.addEventListener('click', async ()=>{
-  const code = (elInput.value||'').replace(/\D/g,'').slice(0,4);
-  if (code.length !== 4) { elStatus.textContent = 'Código inválido (4 dígitos).'; return; }
-  if (joined) { elStatus.textContent = 'Sessão já iniciada.'; return; }
-
+btnConn?.addEventListener('click', async () => {
+  const code = (elInput.value || '').replace(/\D/g, '').slice(0, 4);
+  if (code.length !== 4) {
+    elStatus.textContent = 'Código inválido (4 dígitos).';
+    return;
+  }
+  if (joined) {
+    elStatus.textContent = 'Sessão já iniciada.';
+    return;
+  }
   try {
     setBusy(true);
     elStatus.textContent = 'Conectando...';
-
-    pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
-
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
       if (st === 'connected') {
@@ -47,17 +69,14 @@ btnConn?.addEventListener('click', async ()=>{
         setBusy(false);
       }
     };
-
     pc.oniceconnectionstatechange = () => {
       const st = pc.iceConnectionState;
       if (st === 'failed') {
         elStatus.textContent = 'Falha ICE. Verifique rede/Firewall.';
       }
     };
-
-    pc.ondatachannel = (ev)=>{
+    pc.ondatachannel = (ev) => {
       const dc = ev.channel;
-
       dc.onopen = () => {
         elStatus.textContent = 'Canal de dados aberto. Aguardando resultados...';
       };
@@ -65,7 +84,7 @@ btnConn?.addEventListener('click', async ()=>{
         elStatus.textContent = 'Erro no canal de dados.';
         console.error('[medico] datachannel error', e);
       };
-      dc.onmessage = (mev)=>{
+      dc.onmessage = (mev) => {
         try {
           const data = JSON.parse(mev.data);
           elProf.textContent = data?.profissional || '—';
@@ -79,22 +98,27 @@ btnConn?.addEventListener('click', async ()=>{
         elStatus.textContent = 'Canal fechado.';
       };
     };
-
     const db = firebase.database();
     await joinSession(code, pc, db);
     joined = true;
-
-    window.addEventListener('beforeunload', ()=>{
-      try { pc?.close(); } catch {}
-      try { pc?.__signalingCleanup?.(); } catch {}
-    }, { once:true });
-
+    window.addEventListener(
+      'beforeunload',
+      () => {
+        try {
+          pc?.close();
+        } catch {}
+        try {
+          pc?.__signalingCleanup?.();
+        } catch {}
+      },
+      { once: true }
+    );
   } catch (err) {
     elStatus.textContent = 'Erro: ' + (err?.message || err);
     console.error('[medico] join error', err);
     safeClose();
   } finally {
-    // mantemos "Conectando..." por alguns instantes; volta para "Conectar" se falhar
+    // mantém "Conectando..." por alguns instantes; volta para "Conectar" se falhar
     if (!joined) setBusy(false);
   }
 });

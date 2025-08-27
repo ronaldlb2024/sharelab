@@ -1,165 +1,140 @@
-/* public/js/worker.js
-   Worker dedicado para extração local do PDF:
-   - Carrega pdf.js via CDN dentro do worker.
-   - Configura corretamente o GlobalWorkerOptions mesmo com disableWorker.
-   - Extrai texto de todas as páginas.
-   - Tenta usar /js/extractor.js (MVP canivete). Se não existir, devolve texto bruto.
-*/
-
+/* public/js/worker.js */
 (function () {
   const DIAG = { steps: [] };
   function diag(msg, extra) {
     try { DIAG.steps.push({ t: Date.now(), msg, extra }); } catch {}
   }
 
-  // Log leve pro chamador (não quebra fluxo)
   function log(m) { postMessage({ _log: m }); }
 
-  // ---------- Carregamento de dependências no próprio worker ----------
-  // 1) pdf.js (somente a lib principal; sem pdf.worker.* porque vamos desativar o worker interno)
+  // ---------- Carregamento do PDF.js ----------
   try {
-    importScripts('https://cdn.jsdelivr.net/npm/pdf.js-dist@3.10.111/build/pdf.min.js');
+    // Carrega a versão completa do PDF.js que inclui o worker interno
+    importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');
     diag('pdfjs loaded');
+    
+    // Configuração CORRETA do workerSrc - mesmo com disableWorker: true, isso é necessário
+    if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
+      self.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      diag('workerSrc configured');
+    }
   } catch (e) {
-    postMessage({ ok: false, error: 'Falha ao carregar pdf.js no worker', diag: { ...DIAG, error: String(e) } });
+    postMessage({ ok: false, error: 'Falha ao carregar pdf.js: ' + e.message, diag: DIAG });
     return;
   }
 
-  // 2) Configurar o workerSrc mesmo com disableWorker (necessário para evitar o erro)
-  try {
-    if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
-      // Configura um workerSrc válido, mesmo que não seja usado com disableWorker
-      self.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdf.js-dist@3.10.111/build/pdf.worker.min.js';
-      diag('pdfjs workerSrc configured');
-    }
-  } catch (e) {
-    diag('workerSrc config failed', String(e));
-  }
-
-  // 3) Extrator (opcional). Se existir no projeto, usamos. Senão, devolvemos texto simples.
+  // ---------- Extrator (opcional) ----------
   let extractFromText = null;
   try {
-    // Caminho relativo ao worker. Ajuste se seu arquivo estiver em outro lugar.
-    importScripts('js/extractor.js');
+    importScripts('/js/extractor.js');
     if (typeof self.extractFromText === 'function') {
       extractFromText = self.extractFromText;
       diag('extractor.js loaded');
-    } else {
-      diag('extractor.js not found or no extractFromText');
     }
   } catch (e) {
-    diag('extractor.js import failed', String(e));
+    diag('extractor.js não carregado', e.message);
   }
 
-  // ---------- Funções de extração ----------
+  // ---------- Função de extração de texto ----------
   async function extractTextFromPDF(arrayBuffer) {
-    const loadingTask = self.pdfjsLib.getDocument({
-      data: arrayBuffer,
-      disableWorker: true,          // <- chave para não tentar criar outro worker
-      useWorkerFetch: false,
-    });
+    try {
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        disableWorker: true,    // Não usar worker secundário
+        useWorkerFetch: false,
+        isEvalSupported: false
+      });
 
-    const pdf = await loadingTask.promise;
-    diag('pdf loaded', { numPages: pdf.numPages });
+      const pdf = await loadingTask.promise;
+      diag('PDF carregado', { pages: pdf.numPages });
 
-    let fullText = '';
-    for (let p = 1; p <= pdf.numPages; p++) {
-      const page = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      const strings = (content.items || []).map(it => it.str || '').join(' ');
-      fullText += strings + '\n';
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n\n';
+      }
+
+      return fullText;
+    } catch (error) {
+      throw new Error('Falha na extração do texto: ' + error.message);
     }
-    diag('text extracted', { length: fullText.length });
-    return fullText;
   }
 
-  // ---------- Montagem de saídas mínimas caso não haja extractor.js ----------
+  // ---------- Fallback se não tiver extractor ----------
   function fallbackOutputs(rawText) {
-    // Devolve o texto como "paciente" e uma linha profissional simples
-    const prof = 'Texto extraído (' + rawText.length + ' chars).';
-    const pac = rawText.slice(0, 8000); // evita estourar postMessage com PDFs enormes
-    const json = { exame: { titulo: null, laboratorio: null, data: null }, itens: [] };
-    return { profissional: prof, paciente: pac, json };
+    return {
+      profissional: 'Texto extraído (' + rawText.length + ' caracteres)',
+      paciente: rawText.length > 8000 ? rawText.substring(0, 8000) + '...' : rawText,
+      json: { 
+        exame: { titulo: null, laboratorio: null, data: null }, 
+        itens: [] 
+      }
+    };
   }
 
   // ---------- Handler principal ----------
-  self.onmessage = async (ev) => {
+  self.onmessage = async function(event) {
     try {
-      const buf = ev.data && (ev.data.arrayBuffer || ev.data.buf || ev.data.pdf);
-      if (!buf) {
-        postMessage({ ok: false, error: 'Worker recebeu mensagem sem arrayBuffer', diag: DIAG });
-        return;
+      const data = event.data;
+      if (!data || !data.arrayBuffer) {
+        throw new Error('Nenhum PDF recebido');
       }
-      diag('message received', { bytes: buf.byteLength });
 
-      const text = await extractTextFromPDF(buf);
+      diag('Iniciando extração', { size: data.arrayBuffer.byteLength });
+      
+      const text = await extractTextFromPDF(data.arrayBuffer);
+      diag('Texto extraído', { length: text.length });
 
-      let out;
+      let result;
       if (extractFromText) {
         try {
-          const res = extractFromText(text);
-          // Transforma res do extractor em nossas três vistas padrão.
-          // Se o extractor já gera shareText, usamos como "paciente".
-          const share = res && res.shareText ? res.shareText : null;
-          const itens = (res && res.analytes) ? res.analytes.map(a => ({
-            parametro_norm: a.key,
-            rotulo: a.label,
-            valor: a.value ? (a.value.val ?? null) : null,
-            unidade: a.unit || null,
-            ref: a.refText || null,
-            status: a.flag ? a.flag.replace(/^\w/, c => c.toUpperCase()) : 'Indeterminado'
-          })) : [];
-
-          const profissional = (itens && itens.length)
-            ? itens.map(it => {
-                const v = (it.valor == null) ? '—' : String(it.valor);
-                const u = it.unidade ? (' ' + it.unidade) : '';
-                return `${it.parametro_norm} ${v}${u}`;
-              }).join('; ')
-            : '—';
-
-          const paciente = (share && share.trim().length)
-            ? share
-            : (itens.length
-                ? itens.map(it => {
-                    const v = (it.valor == null) ? '—' : String(it.valor);
-                    const u = it.unidade ? (' ' + it.unidade) : '';
-                    const st = it.status && it.status !== 'Indeterminado' ? ` — ${it.status.toLowerCase()}` : '';
-                    return `${it.rotulo || it.parametro_norm}: ${v}${u}${st}`;
-                  }).join('\n')
-                : text.slice(0, 8000));
-
-          const json = {
-            exame: { titulo: 'Exames de Análises Clínicas', laboratorio: null, data: null },
-            itens
+          const extracted = extractFromText(text);
+          // Converte o formato do extrator para o formato esperado
+          result = {
+            profissional: extracted.shareText || 'Dados extraídos',
+            paciente: text.substring(0, 8000),
+            json: {
+              exame: { titulo: 'Exame Laboratorial', laboratorio: null, data: null },
+              itens: extracted.analytes ? extracted.analytes.map(item => ({
+                parametro_norm: item.key,
+                rotulo: item.label,
+                valor: item.value?.val || null,
+                unidade: item.unit || null,
+                ref: item.refText || null,
+                status: item.flag || 'Indeterminado'
+              })) : []
+            }
           };
-
-          out = { profissional, paciente, json };
-          diag('extractor outputs built', { items: itens.length });
-        } catch (e) {
-          diag('extractor error', String(e));
-          out = fallbackOutputs(text);
+        } catch (extractError) {
+          diag('Erro no extrator', extractError.message);
+          result = fallbackOutputs(text);
         }
       } else {
-        out = fallbackOutputs(text);
+        result = fallbackOutputs(text);
       }
 
-      postMessage({ ok: true, ...out, diag: DIAG });
-    } catch (err) {
-      // Erro "falhou sem detalhes" resolvido aqui: sempre manda string legível
-      const message = (err && (err.message || err.toString())) || 'Erro desconhecido';
-      postMessage({ ok: false, error: message, diag: DIAG });
+      postMessage({ ok: true, ...result, diag: DIAG });
+
+    } catch (error) {
+      postMessage({ 
+        ok: false, 
+        error: error.message || 'Erro desconhecido no worker',
+        diag: DIAG 
+      });
     }
   };
 
-  // Captura falhas não tratadas dentro do worker
-  self.addEventListener('error', (e) => {
-    postMessage({ ok: false, error: e.message || 'worker error', diag: { ...DIAG, filename: e.filename, lineno: e.lineno } });
-  });
-  self.addEventListener('unhandledrejection', (e) => {
-    const reason = e && e.reason ? (e.reason.message || String(e.reason)) : 'unhandledrejection';
-    postMessage({ ok: false, error: reason, diag: DIAG });
-  });
+  // ---------- Tratamento de erros globais ----------
+  self.onerror = function(error) {
+    postMessage({ 
+      ok: false, 
+      error: 'Erro global no worker: ' + error.message,
+      diag: DIAG 
+    });
+  };
 
-  log('worker ready');
+  log('Worker de PDF inicializado com sucesso');
+
 })();

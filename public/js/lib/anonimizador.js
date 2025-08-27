@@ -1,4 +1,3 @@
-// public/js/lib/anonimizador.js
 // Remove ou mascara CPFs, datas de nascimento e identificadores pessoais do texto.
 
 export function anonimizar(texto) {

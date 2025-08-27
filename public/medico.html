@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>ShareLab — Médico</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 16px;
+        max-width: 620px;
+      }
+      h1 {
+        margin: 0.25rem 0;
+      }
+      .row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 0.5rem;
+      }
+      button,
+      input[type='text'] {
+        padding: 0.45rem 0.7rem;
+        border: 1px solid #888;
+        border-radius: 8px;
+        background: #fff;
+      }
+      p.muted {
+        font-size: 0.9em;
+        color: #555;
+      }
+      pre {
+        background: #fafafa;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 0.5rem;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Receber exame</h1>
+    <div class="row">
+      <label for="sessionCodeInput"><strong>Código:</strong></label>
+      <input
+        id="sessionCodeInput"
+        type="text"
+        inputmode="numeric"
+        pattern="\d{4}"
+        maxlength="4"
+      />
+      <button id="connectBtn">Conectar</button>
+    </div>
+    <p id="p2pStatus" class="muted"></p>
+    <pre id="profissional">—</pre>
+
+    <!-- bibliotecas Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <!-- lógica do médico -->
+    <script type="module" src="js/pages/medico.js"></script>
+  </body>
+</html>

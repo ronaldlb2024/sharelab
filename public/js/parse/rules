@@ -1,0 +1,7 @@
+/* public/js/parse/rules.js
+   - Nesta versão mínima, não definimos regras de parsing. O array RULES fica vazio.
+   - Para utilizar parsing real, implemente as regras conforme o repositório original.
+*/
+(function(){
+  self.RULES = [];
+})();

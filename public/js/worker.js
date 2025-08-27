@@ -1,91 +1,163 @@
-/* public/js/worker.js */
-const DIAG = { imports: [], mode: null };
+/* public/js/worker.js
+   Worker dedicado para extração local do PDF:
+   - Carrega pdf.js via CDN dentro do worker.
+   - Desativa o worker interno do pdf.js (disableWorker: true).
+   - Extrai texto de todas as páginas.
+   - Tenta usar /js/extractor.js (MVP canivete). Se não existir, devolve texto bruto.
+*/
 
-function safeImport(src){
-  try{ self.importScripts(src); DIAG.imports.push({src, ok:true}); }
-  catch(e){ DIAG.imports.push({src, ok:false, error:String(e?.message||e)}); throw e; }
-}
-
-// Carrega pdf.js no próprio worker (CDN)
-(() => {
-  let ok = false;
-  try { safeImport('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'); ok = true; } catch {}
-  if (!ok) { self.postMessage({ ok:false, error:'Falha ao carregar pdf.js', diag: DIAG }); return; }
-})();
-
-// (opcional) import dos módulos do parser
-try{
-  safeImport('parse/normalize.js');
-  safeImport('parse/rules.js');
-  safeImport('parse/parse.js');
-  safeImport('parse/format.js');
-}catch(e){
-  self.postMessage({ ok:false, error:'Falha ao importar módulos parse/*.js', diag: DIAG });
-}
-
-let disable = false;
-try{
-  if (!self.pdfjsLib?.GlobalWorkerOptions) throw new Error('GlobalWorkerOptions ausente');
-  self.pdfjsLib.GlobalWorkerOptions.workerPort = self;  // sem workerSrc
-  DIAG.mode = 'workerPort=self';
-}catch(e){
-  disable = true;          // fallback
-  DIAG.mode = 'disableWorker';
-}
-
-const Y_TOL = 2.0, GAP_AS_TAB = 40;
-function reconstructLines(tc){
-  const rows=[];
-  for(const it of (tc.items||[])){
-    const tr = it.transform || [1,0,0,1,0,0];
-    const x=tr[4], y=tr[5], s=it.str||'';
-    let row = rows.find(r => Math.abs(r.y - y) <= Y_TOL);
-    if(!row) rows.push(row = { y, runs: [] });
-    row.runs.push({ x, str: s });
+(function () {
+  const DIAG = { steps: [] };
+  function diag(msg, extra) {
+    try { DIAG.steps.push({ t: Date.now(), msg, extra }); } catch {}
   }
-  rows.sort((a,b)=> b.y - a.y);
-  return rows.map(r=>{
-    r.runs.sort((a,b)=> a.x - b.x);
-    let acc='';
-    for(let i=0;i<r.runs.length;i++){
-      const c=r.runs[i], p=r.runs[i-1];
-      if(i>0) acc += (c.x - (p?.x ?? c.x) > GAP_AS_TAB) ? '\t' : ' ';
-      acc += c.str;
+
+  // Log leve pro chamador (não quebra fluxo)
+  function log(m) { postMessage({ _log: m }); }
+
+  // ---------- Carregamento de dependências no próprio worker ----------
+  // 1) pdf.js (somente a lib principal; sem pdf.worker.* porque vamos desativar o worker interno)
+  try {
+    importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.10.111/build/pdf.min.js');
+    diag('pdfjs loaded');
+  } catch (e) {
+    postMessage({ ok: false, error: 'Falha ao carregar pdf.js no worker', diag: { ...DIAG, error: String(e) } });
+    return;
+  }
+
+  // 2) Extrator (opcional). Se existir no projeto, usamos. Senão, devolvemos texto simples.
+  let extractFromText = null;
+  try {
+    // Caminho relativo ao worker. Ajuste se seu arquivo estiver em outro lugar.
+    importScripts('js/extractor.js');
+    if (typeof self.extractFromText === 'function') {
+      extractFromText = self.extractFromText;
+      diag('extractor.js loaded');
+    } else {
+      diag('extractor.js not found or no extractFromText');
     }
-    return acc.replace(/\u00A0/g,' ').replace(/[ ]{2,}/g,' ').trim();
-  }).filter(Boolean);
-}
-
-async function extractPdf(buf){
-  if (!self.pdfjsLib) throw new Error('pdfjsLib não carregado');
-  const params = { data: buf };
-  if (disable) { params.disableWorker = true; params.isEvalSupported = false; }
-  const pdf = await pdfjsLib.getDocument(params).promise;
-  const lines=[];
-  for(let p=1;p<=pdf.numPages;p++){
-    const page=await pdf.getPage(p);
-    const tc=await page.getTextContent();
-    lines.push(...reconstructLines(tc));
+  } catch (e) {
+    diag('extractor.js import failed', String(e));
   }
-  return lines;
-}
 
-self.onmessage = async (ev)=>{
-  try{
-    const buf = ev.data?.arrayBuffer;
-    if (!(buf instanceof ArrayBuffer)) throw new Error('ArrayBuffer do PDF não recebido');
-    const lines = await extractPdf(buf);
+  // ---------- Funções de extração ----------
+  async function extractTextFromPDF(arrayBuffer) {
+    // Em worker dedicado: desative o worker interno do pdf.js
+    try {
+      // Algumas versões exigem isso; outras respeitam a flag no getDocument.
+      if (self.pdfjsLib && self.pdfjsLib.GlobalWorkerOptions) {
+        // Não aponte workerSrc aqui; vamos usar disableWorker no getDocument.
+        self.pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+      }
+    } catch (_) {}
 
-    const parsed = (typeof self.parseLabReport==='function')
-      ? self.parseLabReport(lines)
-      : { items: [] };
+    const loadingTask = self.pdfjsLib.getDocument({
+      data: arrayBuffer,
+      disableWorker: true,          // <- chave para não tentar criar outro worker
+      useWorkerFetch: false,
+    });
 
-    const out = (typeof self.formatOutputs==='function')
-      ? self.formatOutputs(parsed)
-      : { profissional: lines.join(' '), paciente: lines.join('\n'), json: { itens: [] } };
+    const pdf = await loadingTask.promise;
+    diag('pdf loaded', { numPages: pdf.numPages });
 
-    self.postMessage({ ok:true, ...out, diag: DIAG });
-  }catch(err){
-    self.postMessage({ ok:false, error: String(err?.message||err) });
+    let fullText = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const strings = (content.items || []).map(it => it.str || '').join(' ');
+      fullText += strings + '\n';
+    }
+    diag('text extracted', { length: fullText.length });
+    return fullText;
   }
-};
+
+  // ---------- Montagem de saídas mínimas caso não haja extractor.js ----------
+  function fallbackOutputs(rawText) {
+    // Devolve o texto como "paciente" e uma linha profissional simples
+    const prof = 'Texto extraído (' + rawText.length + ' chars).';
+    const pac = rawText.slice(0, 8000); // evita estourar postMessage com PDFs enormes
+    const json = { exame: { titulo: null, laboratorio: null, data: null }, itens: [] };
+    return { profissional: prof, paciente: pac, json };
+  }
+
+  // ---------- Handler principal ----------
+  self.onmessage = async (ev) => {
+    try {
+      const buf = ev.data && (ev.data.arrayBuffer || ev.data.buf || ev.data.pdf);
+      if (!buf) {
+        postMessage({ ok: false, error: 'Worker recebeu mensagem sem arrayBuffer', diag: DIAG });
+        return;
+      }
+      diag('message received', { bytes: buf.byteLength });
+
+      const text = await extractTextFromPDF(buf);
+
+      let out;
+      if (extractFromText) {
+        try {
+          const res = extractFromText(text);
+          // Transforma res do extractor em nossas três vistas padrão.
+          // Se o extractor já gera shareText, usamos como “paciente”.
+          const share = res && res.shareText ? res.shareText : null;
+          const itens = (res && res.analytes) ? res.analytes.map(a => ({
+            parametro_norm: a.key,
+            rotulo: a.label,
+            valor: a.value ? (a.value.val ?? null) : null,
+            unidade: a.unit || null,
+            ref: a.refText || null,
+            status: a.flag ? a.flag.replace(/^\w/, c => c.toUpperCase()) : 'Indeterminado'
+          })) : [];
+
+          const profissional = (itens && itens.length)
+            ? itens.map(it => {
+                const v = (it.valor == null) ? '—' : String(it.valor);
+                const u = it.unidade ? (' ' + it.unidade) : '';
+                return `${it.parametro_norm} ${v}${u}`;
+              }).join('; ')
+            : '—';
+
+          const paciente = (share && share.trim().length)
+            ? share
+            : (itens.length
+                ? itens.map(it => {
+                    const v = (it.valor == null) ? '—' : String(it.valor);
+                    const u = it.unidade ? (' ' + it.unidade) : '';
+                    const st = it.status && it.status !== 'Indeterminado' ? ` — ${it.status.toLowerCase()}` : '';
+                    return `${it.rotulo || it.parametro_norm}: ${v}${u}${st}`;
+                  }).join('\n')
+                : text.slice(0, 8000));
+
+          const json = {
+            exame: { titulo: 'Exames de Análises Clínicas', laboratorio: null, data: null },
+            itens
+          };
+
+          out = { profissional, paciente, json };
+          diag('extractor outputs built', { items: itens.length });
+        } catch (e) {
+          diag('extractor error', String(e));
+          out = fallbackOutputs(text);
+        }
+      } else {
+        out = fallbackOutputs(text);
+      }
+
+      postMessage({ ok: true, ...out, diag: DIAG });
+    } catch (err) {
+      // Erro “falhou sem detalhes” resolvido aqui: sempre manda string legível
+      const message = (err && (err.message || err.toString())) || 'Erro desconhecido';
+      postMessage({ ok: false, error: message, diag: DIAG });
+    }
+  };
+
+  // Captura falhas não tratadas dentro do worker
+  self.addEventListener('error', (e) => {
+    postMessage({ ok: false, error: e.message || 'worker error', diag: { ...DIAG, filename: e.filename, lineno: e.lineno } });
+  });
+  self.addEventListener('unhandledrejection', (e) => {
+    const reason = e && e.reason ? (e.reason.message || String(e.reason)) : 'unhandledrejection';
+    postMessage({ ok: false, error: reason, diag: DIAG });
+  });
+
+  log('worker ready');
+})();
